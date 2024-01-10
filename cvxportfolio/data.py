@@ -40,6 +40,8 @@ from .utils import (hash_, periods_per_year_from_datetime_index,
 __all__ = ["YahooFinance", "Fred",
            "UserProvidedMarketData", "DownloadedMarketData"]
 
+logger = logging.getLogger(__name__)
+
 BASE_LOCATION = Path.home() / "cvxportfolio_data"
 
 def now_timezoned():
@@ -132,7 +134,7 @@ class SymbolData:
         # we could implement multiprocess safety here
         loader = globals()['_loader_' + self._storage_backend]
         try:
-            logging.info(
+            logger.info(
                 f"{self.__class__.__name__} is trying to load {self.symbol}"
                 + f" with {self._storage_backend} backend"
                 + f" from {self.storage_location}")
@@ -156,7 +158,7 @@ class SymbolData:
         """
         # we could implement multiprocess safety here
         storer = globals()['_storer_' + self._storage_backend]
-        logging.info(
+        logger.info(
             f"{self.__class__.__name__} is storing {self.symbol}"
             + f" with {self._storage_backend} backend"
             + f" in {self.storage_location}")
@@ -178,14 +180,14 @@ class SymbolData:
         :type grace_period: pandas.Timedelta
         """
         current = self._load_raw()
-        logging.info(
+        logger.info(
             f"Downloading {self.symbol}"
             + f" from {self.__class__.__name__}")
         updated = self._download(
             self.symbol, current, grace_period=grace_period)
 
         if np.any(updated.iloc[:-1].isnull()):
-            logging.warning(
+            logger.warning(
               " cvxportfolio.%s('%s').data contains NaNs."
               + " You may want to inspect it. If you want, you can delete the"
               + " data file in %s to force re-download from the start.",
@@ -199,25 +201,25 @@ class SymbolData:
                         np.isclose(updated.loc[current.index[:-1]],
                             current.iloc[:-1], equal_nan=True,
                             rtol=1e-08, atol=1e-08)):
-                    logging.error(f"{self.__class__.__name__} update"
+                    logger.error(f"{self.__class__.__name__} update"
                         + f" of {self.symbol} is not append-only!")
                     self._print_difference(current, updated)
                 if hasattr(current, 'columns'):
                     # the first column is open price
                     if not current.iloc[-1, 0] == updated.loc[
                             current.index[-1]].iloc[0]:
-                        logging.error(
+                        logger.error(
                             f"{self.__class__.__name__} update "
                             + f" of {self.symbol} changed last open price!")
                         self._print_difference(current, updated)
                 else:
                     if not current.iloc[-1] == updated.loc[current.index[-1]]:
-                        logging.error(
+                        logger.error(
                             f"{self.__class__.__name__} update"
                             + f" of {self.symbol} changed last value!")
                         self._print_difference(current, updated)
         except KeyError:
-            logging.error("%s update of %s could not be checked for"
+            logger.error("%s update of %s could not be checked for"
                 + " append-only edits. Was there a DST change?",
                 self.__class__.__name__, self.symbol)
         self._store(updated)
@@ -327,14 +329,15 @@ class YahooFinance(SymbolData):
         # fill open price with close from day(s) before
         # repeat as long as it helps (up to 1 year)
         for shifter in range(252):
-            logging.info(
-                "Filling opens with close from %s days before", shifter)
             orig_missing_opens = data['open'].isnull().sum()
             data['open'] = data['open'].fillna(data['close'].shift(
                 shifter+1))
             new_missing_opens = data['open'].isnull().sum()
             if orig_missing_opens == new_missing_opens:
                 break
+            logger.info(
+                "Filled missing open prices with close from %s periods before",
+                shifter+1)
 
         # fill close price with same day's open
         data['close'] = data['close'].fillna(data['open'])
@@ -481,7 +484,7 @@ class YahooFinance(SymbolData):
                 + ' could have issues with DST.')
         if (current is None) or (len(current) < overlap):
             updated = self._get_data_yahoo(symbol, **kwargs)
-            logging.info('Downloading from the start.')
+            logger.info('Downloading from the start.')
             result = self._clean(updated)
             # we remove first row if it contains NaNs
             if np.any(result.iloc[0].isnull()):
@@ -489,7 +492,7 @@ class YahooFinance(SymbolData):
             return result
         if (now_timezoned() - current.index[-1]
                 ) < pd.Timedelta(grace_period):
-            logging.info(
+            logger.info(
                 'Skipping download because stored data is recent enough.')
             return current
         new = self._get_data_yahoo(symbol, start=current.index[-overlap])
@@ -564,7 +567,7 @@ class Fred(SymbolData):
             return self._internal_download(symbol)
         if (pd.Timestamp.today() - current.index[-1]
             ) < pd.Timedelta(grace_period):
-            logging.info(
+            logger.info(
                 'Skipping download because stored data is recent enough.')
             return current
 
@@ -572,7 +575,7 @@ class Fred(SymbolData):
         new = new.loc[new.index > current.index[-1]]
 
         if new.empty:
-            logging.info('New downloaded data is empty!')
+            logger.info('New downloaded data is empty!')
             return current
 
         assert new.index[0] > current.index[-1]
@@ -801,6 +804,16 @@ class MarketData:
         """
         return None
 
+# compiled based on Interactive Brokers benchmark rates choices
+# (see https://www.ibkrguides.com/kb/article-2949.htm)
+# and their FRED codes
+RATES = {
+    'USDOLLAR': 'DFF', # Federal funds effective rate
+    'EURO': 'ECBESTRVOLWGTTRMDMNRT', # BCE short term rate
+    'GBPOUND': 'IUDSOIA', # SONIA
+    'JPYEN': 'IRSTCB01JPM156N', # updated monthly
+    }
+
 class MarketDataInMemory(MarketData):
     """Market data that is stored in memory when initialized."""
 
@@ -808,7 +821,8 @@ class MarketDataInMemory(MarketData):
     returns = None
 
     def __init__(
-        self, trading_frequency, base_location, cash_key, min_history):
+        self, trading_frequency, base_location, cash_key, min_history,
+        online_usage = False):
         """This must be called by the derived classes."""
         if (self.returns.index[-1] - self.returns.index[0]) < min_history:
             raise DataError(
@@ -827,11 +841,12 @@ class MarketDataInMemory(MarketData):
         self.base_location = Path(base_location)
         self.cash_key = cash_key
         self._min_history_timedelta = min_history
+        self.online_usage = online_usage
 
     def _mask_dataframes(self, mask):
         """Mask internal dataframes if necessary."""
         if (self._mask is None) or not np.all(self._mask == mask):
-            logging.info("Masking internal %s dataframes.",
+            logger.info("Masking internal %s dataframes.",
                 self.__class__.__name__)
             colmask = self.returns.columns[mask]
             # self._masked_returns = self._df_or_ser_set_read_only(
@@ -915,9 +930,10 @@ class MarketDataInMemory(MarketData):
         objective term.
         """
 
-        if not cash_key == 'USDOLLAR':
+        if not cash_key in RATES:
             raise NotImplementedError(
-                'Currently the only data pipeline built is for USDOLLAR cash')
+                'Currently the only data pipelines built are for cash_key'
+                f' in {list(RATES)}')
 
         if self.returns.index.tz is None:
             raise DataError(
@@ -933,7 +949,9 @@ class MarketDataInMemory(MarketData):
                 + " its name.")
 
         data = Fred(
-            'DFF', base_location=self.base_location, grace_period=grace_period)
+            RATES[cash_key], base_location=self.base_location,
+            grace_period=grace_period)
+
         cash_returns_per_period = resample_returns(
             data.data/100, periods=self.periods_per_year)
 
@@ -974,8 +992,11 @@ class MarketDataInMemory(MarketData):
     def _universe_mask_at_time(self, t):
         """Return the valid universe mask at time t."""
         past_returns = self.returns.loc[self.returns.index < t]
-        valid_universe_mask = ((past_returns.count() >= self.min_history) &
-            (~self.returns.loc[t].isnull()))
+        if self.online_usage:
+            valid_universe_mask = past_returns.count() >= self.min_history
+        else:
+            valid_universe_mask = ((past_returns.count() >= self.min_history) &
+                (~self.returns.loc[t].isnull()))
         if sum(valid_universe_mask) <= 1:
             raise DataError(
                 f'The trading universe at time {t} has size less or equal'
@@ -1184,14 +1205,19 @@ class UserProvidedMarketData(MarketDataInMemory):
         make sure your provided dataframes have a timezone aware datetime
         index. Its returns are the risk-free rate.
     :type cash_key: str
+    :param online_usage: Disable removal of assets that have ``np.nan`` returns
+        for the given time. Default False.
+    :type online_usage: bool
     """
 
+    # pylint: disable=too-many-arguments
     def __init__(self, returns, volumes=None, prices=None,
                  copy_dataframes=True, trading_frequency=None,
                  min_history=pd.Timedelta('365.24d'),
                  base_location=BASE_LOCATION,
                  grace_period=pd.Timedelta('1d'),
-                 cash_key='USDOLLAR'):
+                 cash_key='USDOLLAR',
+                 online_usage=False):
 
         if returns is None:
             raise SyntaxError(
@@ -1214,7 +1240,8 @@ class UserProvidedMarketData(MarketDataInMemory):
             trading_frequency=trading_frequency,
             base_location=base_location,
             cash_key=cash_key,
-            min_history=min_history)
+            min_history=min_history,
+            online_usage=online_usage)
 
 
 class DownloadedMarketData(MarketDataInMemory):
@@ -1248,8 +1275,12 @@ class DownloadedMarketData(MarketDataInMemory):
         We implement ``'weekly'``, ``'monthly'``, ``'quarterly'`` and
         ``'annual'``. By default (None) don't down-sample.
     :type trading_frequency: str or None
+    :param online_usage: Disable removal of assets that have ``np.nan`` returns
+        for the given time. Default False.
+    :type online_usage: bool
     """
 
+    # pylint: disable=too-many-arguments
     def __init__(self,
                  universe=(),
                  datasource='YahooFinance',
@@ -1258,7 +1289,8 @@ class DownloadedMarketData(MarketDataInMemory):
                  storage_backend='pickle',
                  min_history=pd.Timedelta('365.24d'),
                  grace_period=pd.Timedelta('1d'),
-                 trading_frequency=None):
+                 trading_frequency=None,
+                 online_usage=False):
         """Initializer."""
 
         # drop duplicates and ensure ordering
@@ -1281,7 +1313,8 @@ class DownloadedMarketData(MarketDataInMemory):
             trading_frequency=trading_frequency,
             base_location=base_location,
             cash_key=cash_key,
-            min_history=min_history)
+            min_history=min_history,
+            online_usage=online_usage)
 
     def _get_market_data(self, universe, grace_period, storage_backend):
         """Download market data."""
@@ -1290,7 +1323,7 @@ class DownloadedMarketData(MarketDataInMemory):
         sys.stdout.flush()
 
         for stock in universe:
-            logging.info(
+            logger.info(
                 'Updating %s with %s.', stock, self.datasource.__name__)
             print('.', end='')
             sys.stdout.flush()
@@ -1325,10 +1358,10 @@ class DownloadedMarketData(MarketDataInMemory):
         """
 
         if self.prices.iloc[-5:].isnull().any().any():
-            logging.debug(
+            logger.debug(
                 'Removing some recent lines because there are missing values.')
             drop_at = self.prices.iloc[-5:].isnull().any(axis=1).idxmax()
-            logging.debug('Dropping at index %s', drop_at)
+            logger.debug('Dropping at index %s', drop_at)
             self.returns = self.returns.loc[self.returns.index < drop_at]
             if self.prices is not None:
                 self.prices = self.prices.loc[self.prices.index < drop_at]

@@ -46,6 +46,8 @@ __all__ = [
     "MultiPeriodOpt",
 ]
 
+logger = logging.getLogger(__name__)
+
 class Policy(Estimator):
     """Base trading policy class, defines execute method."""
 
@@ -65,11 +67,13 @@ class Policy(Estimator):
         :type market_data: cvxportfolio.MarketData instance
         :param t: Time at which we execute. If None (the default), the
             last timestamp in the trading calendar provided by the
-            :class:`MarketData` instance is used.
+            :class:`MarketData` instance is used. Note: if you use a default
+            market data server, you probably want to set their ``online_usage``
+            argument to ``True``.
         :type t: pandas.Timestamp or None
 
         :raises cvxportfolio.errors.DataError: Holdings vector sum to a
-            negative value.
+            negative value or don't match the market data server's universe.
 
         :returns: u, t, shares_traded
         :rtype: pandas.Series, pandas.Timestamp, pandas.Series
@@ -89,10 +93,17 @@ class Policy(Estimator):
                 f"Holdings provided to {self.__class__.__name__}.execute "
                 + " have negative sum.")
 
-        w = h / v
-
         past_returns, _, past_volumes, _, current_prices = market_data.serve(t)
 
+        if sorted(h.index) != sorted(past_returns.columns):
+            raise DataError(
+                "Holdings provided don't match the universe"
+                " implied by the market data server.")
+
+        h = h[past_returns.columns]
+        w = h / v
+
+        # consider adding caching logic here
         self.initialize_estimator_recursive(
             universe=past_returns.columns,
             trading_calendar=trading_calendar[trading_calendar >= t])
@@ -101,6 +112,10 @@ class Policy(Estimator):
             t=t, past_returns=past_returns, past_volumes=past_volumes,
             current_weights=w, current_portfolio_value=v,
             current_prices=current_prices)
+
+        # this could be optional, currently unused)
+        self.finalize_estimator_recursive()
+
         z = w_plus - w
         u = z * v
 
@@ -116,7 +131,8 @@ class Policy(Estimator):
 class Hold(Policy):
     """Hold initial portfolio, don't trade."""
 
-    def values_in_time(self, current_weights, **kwargs):
+    def values_in_time( # pylint: disable=arguments-differ
+            self, current_weights, **kwargs):
         """Return current_weights.
 
         :param current_weights: Current weights.
@@ -136,7 +152,8 @@ class AllCash(Policy):
     :class:`MultiPeriodOptimization` policies.
     """
 
-    def values_in_time(self, past_returns, **kwargs):
+    def values_in_time( # pylint: disable=arguments-differ
+            self, past_returns, **kwargs):
         """Return all cash weights.
 
         :param past_returns: Past market returns (used to infer universe).
@@ -154,7 +171,8 @@ class AllCash(Policy):
 class MarketBenchmark(Policy):
     """Allocation weighted by last year's total market volumes."""
 
-    def values_in_time(self, past_returns, past_volumes, **kwargs):
+    def values_in_time( # pylint: disable=arguments-differ
+            self, past_returns, past_volumes, **kwargs):
         """Return market benchmark weights.
 
         :param past_returns: Past market returns (used to infer universe with
@@ -211,7 +229,8 @@ class RankAndLongShort(Policy):
         self.signal = DataEstimator(signal)
         self.target_leverage = DataEstimator(target_leverage)
 
-    def values_in_time(self, current_weights, **kwargs):
+    def values_in_time( # pylint: disable=arguments-differ
+            self, current_weights, **kwargs):
         """Get allocation weights.
 
         :param current_weights: Current allocation weights.
@@ -259,23 +278,25 @@ class ProportionalTradeToTargets(Policy):
         self.targets = targets
         self.trading_days = None
 
-    def initialize_estimator(self, universe, trading_calendar):
+    def initialize_estimator( # pylint: disable=arguments-differ
+            self, trading_calendar, **kwargs):
         """Initialize policy instance with updated trading_calendar.
 
-        :param universe: Trading universe, including cash.
-        :type universe: pandas.Index
         :param trading_calendar: Future (including current) trading calendar.
         :type trading_calendar: pandas.DatetimeIndex
+        :param kwargs: Other unused arguments to :meth:`initialize_estimator`.
+        :type kwargs: dict
         """
         self.trading_days = trading_calendar
 
-    def values_in_time(self, t, current_weights, **kwargs):
+    def values_in_time( # pylint: disable=arguments-differ
+            self, t, current_weights, **kwargs):
         """Get current allocation weights.
 
-        :param current_weights: Current allocation weights.
-        :type current_weights: pandas.Series
         :param t: Current time.
         :type t: pandas.Timestamp
+        :param current_weights: Current allocation weights.
+        :type current_weights: pandas.Series
         :param kwargs: Unused arguments to :meth:`values_in_time`.
         :type kwargs: dict
 
@@ -330,17 +351,18 @@ class FixedTrades(Policy):
         self.trades_weights = DataEstimator(
             trades_weights, data_includes_cash=True)
 
-    def values_in_time_recursive(self, t, current_weights, **kwargs):
+    def values_in_time_recursive( # pylint: disable=arguments-differ
+            self, t, current_weights, **kwargs):
         """Get current allocation weights.
 
         We redefine the recursive version of :meth:`values_in_time` because
         we catch an exception thrown by a sub-estimator.
 
-        :param current_weights: Current allocation weights.
-        :type current_weights: pandas.Series
         :param t: Current time.
         :type t: pandas.Timestamp
-        :param kwargs: Unused arguments to :meth:`values_in_time_recursive`.
+        :param current_weights: Current allocation weights.
+        :type current_weights: pandas.Series
+        :param kwargs: Unused arguments to :meth:`values_in_time`.
         :type kwargs: dict
 
         :returns: Allocation weights.
@@ -352,7 +374,7 @@ class FixedTrades(Policy):
             result = current_weights + pd.Series(
                 self.trades_weights.current_value, current_weights.index)
         except MissingTimesError:
-            logging.info("%s didn't trade at time %s because it couldn't find"
+            logger.info("%s didn't trade at time %s because it couldn't find"
                 + " trade weights among the provided ones.",
                 self.__class__.__name__, t)
             result = current_weights
@@ -381,16 +403,17 @@ class FixedWeights(Policy):
         self.target_weights = DataEstimator(
             target_weights, data_includes_cash=True)
 
-    def values_in_time_recursive(self, t, current_weights, **kwargs):
+    def values_in_time_recursive( # pylint: disable=arguments-differ
+            self, t, current_weights, **kwargs):
         """Get current allocation weights.
 
         We redefine the recursive version of :meth:`values_in_time` because
         we catch an exception thrown by a sub-estimator.
 
-        :param current_weights: Current allocation weights.
-        :type current_weights: pandas.Series
         :param t: Current time.
         :type t: pandas.Timestamp
+        :param current_weights: Current allocation weights.
+        :type current_weights: pandas.Series
         :param kwargs: Unused arguments to :meth:`values_in_time_recursive`.
         :type kwargs: dict
 
@@ -404,7 +427,7 @@ class FixedWeights(Policy):
                 self.target_weights.current_value, current_weights.index
                 ) - current_weights
         except MissingTimesError:
-            logging.info("%s didn't trade at time %s because it couldn't find"
+            logger.info("%s didn't trade at time %s because it couldn't find"
                 + " target weights among the provided ones.",
                 self.__class__.__name__, t)
             result = current_weights
@@ -427,13 +450,14 @@ class Uniform(FixedWeights):
         # values_in_time_recursive
         self.target_weights = None
 
-    def initialize_estimator(self, universe, trading_calendar):
+    def initialize_estimator( # pylint: disable=arguments-differ
+            self, universe, **kwargs):
         """Initialize this estimator.
 
         :param universe: Trading universe, including cash.
         :type universe: pandas.Index
-        :param trading_calendar: Future (including current) trading calendar.
-        :type trading_calendar: pandas.DatetimeIndex
+        :param kwargs: Other unused arguments to :meth:`initialize_estimator`.
+        :type kwargs: dict
         """
         target_weights = pd.Series(1., universe)
         target_weights.iloc[-1] = 0
@@ -501,7 +525,8 @@ class AdaptiveRebalance(Policy):
         self.target = DataEstimator(target)
         self.tracking_error = DataEstimator(tracking_error)
 
-    def values_in_time(self, current_weights, **kwargs):
+    def values_in_time( # pylint: disable=arguments-differ
+            self, current_weights, **kwargs):
         """Get target allocation weights.
 
         :param current_weights: Current allocation weights.
@@ -517,7 +542,7 @@ class AdaptiveRebalance(Policy):
             return self.target.current_value
         return current_weights
 
-
+# pylint: disable=too-many-instance-attributes
 class MultiPeriodOptimization(Policy):
     r"""Multi Period Optimization policy.
 
@@ -578,6 +603,7 @@ class MultiPeriodOptimization(Policy):
         is not right.
     """
 
+    # pylint: disable=too-many-arguments
     def __init__(
         self, objective, constraints=(), include_cash_return=True,
         planning_horizon=None, terminal_constraint=None,
@@ -618,60 +644,60 @@ class MultiPeriodOptimization(Policy):
 
         self.cvxpy_kwargs = kwargs
 
-        # redefined below, maybe they all should be private attributes
-        self.cvxpy_objective = 0
-        self.cvxpy_constraints = []
-        self.problem = None
-        self.w_bm = None
-        self.w_current = None
-        self.z_at_lags = None
-        self.w_plus_at_lags = None
-        self.w_plus_minus_w_bm_at_lags = None
+        # redefined below
+        self._cvxpy_objective = 0
+        self._cvxpy_constraints = []
+        self._problem = None
+        self._w_bm = None
+        self._w_current = None
+        self._z_at_lags = None
+        self._w_plus_at_lags = None
+        self._w_plus_minus_w_bm_at_lags = None
         self._cache = {}
 
-    def _compile_to_cvxpy(self):  # , w_plus, z, value):
+    def _compile_to_cvxpy(self):
         """Compile all cvxpy expressions and the problem."""
-        self.cvxpy_objective = [
+        self._cvxpy_objective = [
             el.compile_to_cvxpy(
-                self.w_plus_at_lags[i], self.z_at_lags[i],
-                self.w_plus_minus_w_bm_at_lags[i])
+                self._w_plus_at_lags[i], self._z_at_lags[i],
+                self._w_plus_minus_w_bm_at_lags[i])
             for i, el in enumerate(self.objective)]
-        for el, term in zip(self.objective, self.cvxpy_objective):
+        for el, term in zip(self.objective, self._cvxpy_objective):
             if not term.is_dcp():
                 raise ConvexSpecificationError(el)
             if not term.is_concave():
                 raise ConvexityError(el)
-        self.cvxpy_objective = sum(self.cvxpy_objective)
+        self._cvxpy_objective = sum(self._cvxpy_objective)
 
         def _compile_and_check_constraint(constr, i):
             result = constr.compile_to_cvxpy(
-                self.w_plus_at_lags[i], self.z_at_lags[i],
-                self.w_plus_minus_w_bm_at_lags[i])
+                self._w_plus_at_lags[i], self._z_at_lags[i],
+                self._w_plus_minus_w_bm_at_lags[i])
             for el in (result if hasattr(result, '__iter__') else [result]):
                 if not el.is_dcp():
                     raise ConvexSpecificationError(constr)
             return result
 
-        self.cvxpy_constraints = [
+        self._cvxpy_constraints = [
             flatten_heterogeneous_list([
                 _compile_and_check_constraint(constr, i) for constr in el])
             for i, el in enumerate(self.constraints)]
 
-        self.cvxpy_constraints = sum(self.cvxpy_constraints, [])
-        self.cvxpy_constraints += [cp.sum(z) == 0 for z in self.z_at_lags]
-        w = self.w_current
+        self._cvxpy_constraints = sum(self._cvxpy_constraints, [])
+        self._cvxpy_constraints += [cp.sum(z) == 0 for z in self._z_at_lags]
+        w = self._w_current
         for i in range(self._planning_horizon):
-            self.cvxpy_constraints.append(
-                self.w_plus_at_lags[i] == self.z_at_lags[i] + w)
-            self.cvxpy_constraints.append(
-                self.w_plus_at_lags[i] - self.w_bm == \
-                    self.w_plus_minus_w_bm_at_lags[i])
-            w = self.w_plus_at_lags[i]
+            self._cvxpy_constraints.append(
+                self._w_plus_at_lags[i] == self._z_at_lags[i] + w)
+            self._cvxpy_constraints.append(
+                self._w_plus_at_lags[i] - self._w_bm == \
+                    self._w_plus_minus_w_bm_at_lags[i])
+            w = self._w_plus_at_lags[i]
         if not self.terminal_constraint is None:
-            self.cvxpy_constraints.append(w == self.terminal_constraint)
-        self.problem = cp.Problem(cp.Maximize(
-            self.cvxpy_objective), self.cvxpy_constraints)
-        if not self.problem.is_dcp():  # dpp=True)
+            self._cvxpy_constraints.append(w == self.terminal_constraint)
+        self._problem = cp.Problem(cp.Maximize(
+            self._cvxpy_objective), self._cvxpy_constraints)
+        if not self._problem.is_dcp():  # dpp=True)
             raise SyntaxError(
                 "The optimization problem compiled by %s"
                 + " does not follow the convex optimization rules."
@@ -679,8 +705,8 @@ class MultiPeriodOptimization(Policy):
                 + " cvxportfolio terms and is probably due to a"
                 + " mis-specified custom term.", self.__class__.__name__)
 
-    # pylint: disable=useless-type-doc,useless-param-doc
-    def initialize_estimator_recursive(self, universe, trading_calendar):
+    def initialize_estimator_recursive( # pylint: disable=arguments-differ
+            self, universe, **kwargs):
         """Initialize the policy object with the trading universe.
 
         We redefine the recursive version of :meth:`initialize_estimator`
@@ -688,28 +714,28 @@ class MultiPeriodOptimization(Policy):
 
         :param universe: Trading universe, including cash.
         :type universe: pandas.Index
-        :param trading_calendar: Future (including current) trading calendar.
-        :type trading_calendar: pandas.DatetimeIndex
+        :param kwargs: Arguments to :meth:`initialize_estimator`.
+        :type kwargs: dict
         """
 
         for obj in self.objective:
-            obj.initialize_estimator_recursive(
-                universe=universe, trading_calendar=trading_calendar)
+            obj.initialize_estimator_recursive(universe=universe, **kwargs)
         for constr_at_lag in self.constraints:
             for constr in constr_at_lag:
                 constr.initialize_estimator_recursive(
-                    universe=universe, trading_calendar=trading_calendar)
+                    universe=universe, **kwargs)
 
         self.benchmark.initialize_estimator_recursive(
-            universe=universe, trading_calendar=trading_calendar)
-        self.w_bm = cp.Parameter(len(universe))
+            universe=universe, **kwargs)
 
-        self.w_current = cp.Parameter(len(universe))
-        self.z_at_lags = [cp.Variable(len(universe))
+        self._w_bm = cp.Parameter(len(universe))
+
+        self._w_current = cp.Parameter(len(universe))
+        self._z_at_lags = [cp.Variable(len(universe))
                           for i in range(self._planning_horizon)]
-        self.w_plus_at_lags = [cp.Variable(
+        self._w_plus_at_lags = [cp.Variable(
             len(universe)) for i in range(self._planning_horizon)]
-        self.w_plus_minus_w_bm_at_lags = [cp.Variable(
+        self._w_plus_minus_w_bm_at_lags = [cp.Variable(
             len(universe)) for i in range(self._planning_horizon)]
 
         # simulator will overwrite this with cache loaded from disk
@@ -717,10 +743,21 @@ class MultiPeriodOptimization(Policy):
 
         self._compile_to_cvxpy()
 
-    def values_in_time_recursive(
-        self, t, current_weights,
-        current_portfolio_value, past_returns, past_volumes,
-        current_prices, **kwargs):
+    def finalize_estimator_recursive(self, **kwargs):
+        """Finalize all objects in this policy's estimator tree.
+
+        :param kwargs: Arguments.
+        :type kwargs: dict
+        """
+        for obj in self.objective:
+            obj.finalize_estimator_recursive(**kwargs)
+        for constr_at_lag in self.constraints:
+            for constr in constr_at_lag:
+                constr.finalize_estimator_recursive(**kwargs)
+        self.benchmark.finalize_estimator_recursive(**kwargs)
+
+    def values_in_time_recursive( # pylint: disable=arguments-differ
+            self, t, current_weights, current_portfolio_value, **kwargs):
         """Update all cvxpy parameters, solve, and return allocation weights.
 
         We redefine the recursive version of :meth:`values_in_time`
@@ -732,13 +769,7 @@ class MultiPeriodOptimization(Policy):
         :type current_weights: pandas.Series
         :param current_portfolio_value: Current total value of the portfolio.
         :type current_portfolio_value: float
-        :param past_returns: Past market returns (includes cash).
-        :type past_returns: pandas.DataFrame
-        :param past_volumes: Past market volumes, or None if not provided.
-        :type past_volumes: pandas.DataFrame or None
-        :param current_prices: Current open prices, or None if not provided.
-        :type current_prices: pandas.Series or None
-        :param kwargs: Unused arguments to :meth:`values_in_time_recursive`.
+        :param kwargs: Other arguments to :meth:`values_in_time_recursive`.
         :type kwargs: dict
 
         :raises cvxportfolio.errors.DataError: Current portfolio value is
@@ -762,8 +793,7 @@ class MultiPeriodOptimization(Policy):
             obj.values_in_time_recursive(
                 t=t, current_weights=current_weights,
                 current_portfolio_value=current_portfolio_value,
-                past_returns=past_returns, past_volumes=past_volumes,
-                current_prices=current_prices, mpo_step=i, cache=self._cache,
+                mpo_step=i, cache=self._cache,
                 **kwargs)
 
         for i, constr_at_lag in enumerate(self.constraints):
@@ -771,20 +801,17 @@ class MultiPeriodOptimization(Policy):
                 constr.values_in_time_recursive(
                     t=t, current_weights=current_weights,
                     current_portfolio_value=current_portfolio_value,
-                    past_returns=past_returns, past_volumes=past_volumes,
-                    current_prices=current_prices, mpo_step=i,
-                    cache=self._cache, **kwargs)
+                    mpo_step=i, cache=self._cache, **kwargs)
 
         self.benchmark.values_in_time_recursive(
             t=t, current_weights=current_weights,
             current_portfolio_value=current_portfolio_value,
-            past_returns=past_returns, past_volumes=past_volumes,
-            current_prices=current_prices, **kwargs)
+            **kwargs)
 
-        self.w_bm.value = np.array(self.benchmark.current_value.values)\
+        self._w_bm.value = np.array(self.benchmark.current_value.values)\
              if hasattr(self.benchmark.current_value, 'values'
             ) else np.array(self.benchmark.current_value)
-        self.w_current.value = current_weights.values
+        self._w_current.value = current_weights.values
 
         try:
             with warnings.catch_warnings():
@@ -793,25 +820,25 @@ class MultiPeriodOptimization(Policy):
                 # suppress cvxpy 1.4 ECOS deprecation warnings
                 if cp.__version__[:3] == '1.4':
                     warnings.filterwarnings("ignore", category=FutureWarning)
-                self.problem.solve(**self.cvxpy_kwargs)
+                self._problem.solve(**self.cvxpy_kwargs)
         except cp.SolverError as exc:
             raise PortfolioOptimizationError(
                 "Numerical solver for policy %s at time %s failed;"
                 + " try changing it, relaxing some constraints,"
                 + " or removing costs.", self.__class__.__name__, t) from exc
 
-        if self.problem.status in ["unbounded", "unbounded_inaccurate"]:
+        if self._problem.status in ["unbounded", "unbounded_inaccurate"]:
             raise PortfolioOptimizationError(
                 f"Policy {self.__class__.__name__} at time "
                 + f"{t} resulted in an unbounded problem.")
 
-        if self.problem.status in ["infeasible", 'infeasible_inaccurate']:
+        if self._problem.status in ["infeasible", 'infeasible_inaccurate']:
             raise PortfolioOptimizationError(
                 f"Policy {self.__class__.__name__} at time "
                 + f"{t} resulted in an infeasible problem.")
 
         result = current_weights + pd.Series(
-            self.z_at_lags[0].value, current_weights.index)
+            self._z_at_lags[0].value, current_weights.index)
         self._current_value = result
         return result
 
@@ -869,12 +896,13 @@ class SinglePeriodOptimization(MultiPeriodOptimization):
             include_cash_return=include_cash_return,
             benchmark=benchmark, **kwargs)
 
-    # def __repr__(self):
-    #     return self.__class__.__name__ + '(' \
-    #         + 'objective=' + str(self.objective[0]) \
-    #         + ', constraints=' + str(self.constraints[0])
-    #         + ', benchmark=' + str(self.constraints[0])
-    #         + ', cvxpy_kwargs=' + str(self.cvxpy_kwargs)
+    def __repr__(self):
+        return self.__class__.__name__ + '(' \
+            + 'objective=' + str(self.objective[0]) \
+            + ', constraints=' + str(self.constraints[0])\
+            + ', benchmark=' + str(self.benchmark)\
+            + ', cvxpy_kwargs=' + str(self.cvxpy_kwargs)\
+            + ')'
 
 # Aliases
 

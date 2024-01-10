@@ -56,6 +56,8 @@ __all__ = [
     "ParticipationRateLimit",
     "MaxWeights",
     "MinWeights",
+    "MaxBenchmarkDeviation",
+    "MinBenchmarkDeviation",
     "NoTrade",
     "NoCash",
     "FactorMaxLimit",
@@ -231,17 +233,19 @@ class MarketNeutral(EqualityConstraint):
         # self.benchmark = benchmark
         self.market_vector = None
 
-    def initialize_estimator(self, universe, trading_calendar):
+    def initialize_estimator( # pylint: disable=arguments-differ
+            self, universe, **kwargs):
         """Initialize parameter with size of universe.
 
         :param universe: Trading universe, including cash.
         :type universe: pandas.Index
-        :param trading_calendar: Future (including current) trading calendar.
-        :type trading_calendar: pandas.DatetimeIndex
+        :param kwargs: Other unused arguments to :meth:`initialize_estimator`.
+        :type kwargs: dict
         """
         self.market_vector = cp.Parameter(len(universe)-1)
 
-    def values_in_time(self, past_volumes, **kwargs):
+    def values_in_time( # pylint: disable=arguments-differ
+            self, past_volumes, **kwargs):
         """Update parameter with current market weights and covariance.
 
         :param past_volumes: Past market volumes, in units of value.
@@ -313,7 +317,8 @@ class ParticipationRateLimit(InequalityConstraint):
             max_fraction_of_volumes, compile_parameter=True)
         self.portfolio_value = cp.Parameter(nonneg=True)
 
-    def values_in_time(self, current_portfolio_value, **kwargs):
+    def values_in_time( # pylint: disable=arguments-differ
+            self, current_portfolio_value, **kwargs):
         """Update parameter with current portfolio value.
 
         :param current_portfolio_value: Current total value of the portfolio.
@@ -383,20 +388,22 @@ class NoTrade(Constraint):
         self._low = None
         self._high = None
 
-    def initialize_estimator(self, universe, trading_calendar):
+    def initialize_estimator( # pylint: disable=arguments-differ
+            self, universe, **kwargs):
         """Initialize internal parameters.
 
         :param universe: Trading universe, including cash.
         :type universe: pandas.Index
-        :param trading_calendar: Future (including current) trading calendar.
-        :type trading_calendar: pandas.DatetimeIndex
+        :param kwargs: Other unused arguments to :meth:`initialize_estimator`.
+        :type kwargs: dict
         """
         self._index = (universe.get_loc if hasattr(
             universe, 'get_loc') else universe.index)(self.asset)
         self._low = cp.Parameter()
         self._high = cp.Parameter()
 
-    def values_in_time(self, t, **kwargs):
+    def values_in_time( # pylint: disable=arguments-differ
+            self, t, **kwargs):
         """Update parameters, if necessary by imposing no-trade.
 
         :param t: Current time.
@@ -479,7 +486,8 @@ class MinCashBalance(InequalityConstraint):
         self.c_min = DataEstimator(c_min)
         self.rhs = cp.Parameter()
 
-    def values_in_time(self, current_portfolio_value, **kwargs):
+    def values_in_time( # pylint: disable=arguments-differ
+            self, current_portfolio_value, **kwargs):
         """Update parameter with current portfolio value.
 
         :param current_portfolio_value: Current total value of the portfolio.
@@ -617,6 +625,77 @@ class MinWeights(InequalityConstraint):
         """Compile right hand side of the constraint expression."""
         return -self.limit.parameter
 
+class MaxBenchmarkDeviation(MaxWeights):
+    r"""A max limit on post-trade weights minus the benchmark weights.
+
+    In our notation, this is
+
+    .. math::
+
+        {(w_t + z_t - w^\text{bm}_t)}_{1:n} \leq w^\text{max}
+
+    where the limit :math:`w^\text{max}` is either a scalar or a vector, see
+    below.
+
+    .. versionadded:: 1.1.0
+        Added in version 1.1.0
+
+    :param limit: A series or number giving the weights limit. See the
+        :ref:`passing-data` manual page for details on how to provide this
+        data. For example, you pass a float if you want a constant limit
+        for all assets at all times, a Pandas series indexed by time if you
+        want a limit constant for all assets but varying in time, a Pandas
+        series indexed by the assets' names if you have limits constant in time
+        but different for each asset, and a Pandas dataframe indexed by time
+        and with assets as columns if you have a different limit for each point
+        in time and each asset. If the value changes for each asset, you should
+        provide a value for each name that ever appear in a back-test; the
+        data will be sliced according to the current trading universe during a
+        back-test. It is fine to have missing values at certain times on assets
+        that are not traded then.
+    :type limit: float, pandas.Series, pandas.DataFrame
+    """
+
+    def _compile_constr_to_cvxpy(self, w_plus, z, w_plus_minus_w_bm):
+        """Compile left hand side of the constraint expression."""
+        return w_plus_minus_w_bm[:-1]
+
+
+class MinBenchmarkDeviation(MinWeights):
+    r"""A min limit on post-trade weights minus the benchmark weights.
+
+    In our notation, this is
+
+    .. math::
+
+        {(w_t + z_t - w^\text{bm}_t)}_{1:n} \geq w^\text{min}
+
+    where the limit :math:`w^\text{min}` is either a scalar or a vector, see
+    below.
+
+    .. versionadded:: 1.1.0
+        Added in version 1.1.0
+
+    :param limit: A series or number giving the weights limit. See the
+        :ref:`passing-data` manual page for details on how to provide this
+        data. For example, you pass a float if you want a constant limit
+        for all assets at all times, a Pandas series indexed by time if you
+        want a limit constant for all assets but varying in time, a Pandas
+        series indexed by the assets' names if you have limits constant in time
+        but different for each asset, and a Pandas dataframe indexed by time
+        and with assets as columns if you have a different limit for each point
+        in time and each asset. If the value changes for each asset, you should
+        provide a value for each name that ever appear in a back-test; the
+        data will be sliced according to the current trading universe during a
+        back-test. It is fine to have missing values at certain times on assets
+        that are not traded then.
+    :type limit: float, pandas.Series, pandas.DataFrame
+    """
+
+    def _compile_constr_to_cvxpy(self, w_plus, z, w_plus_minus_w_bm):
+        """Compile left hand side of the constraint expression."""
+        return -w_plus_minus_w_bm[:-1]
+
 
 class MinMaxWeightsAtTimes(Estimator):
     """This class abstracts functionalities used by the two below.
@@ -639,18 +718,20 @@ class MinMaxWeightsAtTimes(Estimator):
         self.limit = None
         self.trading_calendar = None
 
-    def initialize_estimator(self, universe, trading_calendar):
+    def initialize_estimator( # pylint: disable=arguments-differ
+            self, trading_calendar, **kwargs):
         """Initialize estimator instance with updated trading_calendar.
 
-        :param universe: Trading universe, including cash.
-        :type universe: pandas.Index
         :param trading_calendar: Future (including current) trading calendar.
         :type trading_calendar: pandas.DatetimeIndex
+        :param kwargs: Other unused arguments to :meth:`initialize_estimator`.
+        :type kwargs: dict
         """
         self.trading_calendar = trading_calendar
         self.limit = cp.Parameter()
 
-    def values_in_time(self, t, mpo_step, **kwargs):
+    def values_in_time( # pylint: disable=arguments-differ
+            self, t, mpo_step, **kwargs):
         """If target period is in sight activate constraint.
 
         :param t: Current time.
