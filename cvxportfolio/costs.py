@@ -27,17 +27,21 @@ import cvxpy as cp
 import numpy as np
 import pandas as pd
 
-from .constraints import (CostInequalityConstraint, EqualityConstraint,
-                          InequalityConstraint)
+from .constraints import CostInequalityConstraint, EqualityConstraint, InequalityConstraint
 from .errors import ConvexityError, ConvexSpecificationError
 from .estimator import CvxpyExpressionEstimator, DataEstimator
 from .hyperparameters import HyperParameter
-from .utils import (average_periods_per_year,
-                    periods_per_year_from_datetime_index, resample_returns)
+from .utils import average_periods_per_year, periods_per_year_from_datetime_index, resample_returns
 
-__all__ = ["HoldingCost", "TransactionCost", "SoftConstraint",
-           "StocksTransactionCost", "StocksHoldingCost", "TcostModel",
-           "HcostModel"]
+__all__ = [
+    "HoldingCost",
+    "TransactionCost",
+    "SoftConstraint",
+    "StocksTransactionCost",
+    "StocksHoldingCost",
+    "TcostModel",
+    "HcostModel",
+]
 
 
 class Cost(CvxpyExpressionEstimator):
@@ -51,9 +55,7 @@ class Cost(CvxpyExpressionEstimator):
         """Multiply by constant."""
         if isinstance(other, (Number, HyperParameter)):
             return CombinedCosts([self], [other])
-        raise SyntaxError(
-            "You can only multiply a cost instance by a scalar "
-            + "or a HyperParameter instance.")
+        raise SyntaxError("You can only multiply a cost instance by a scalar " + "or a HyperParameter instance.")
 
     def __add__(self, other):
         """Add cost expression to another cost expression.
@@ -99,13 +101,11 @@ class Cost(CvxpyExpressionEstimator):
 
     def __lt__(self, other):
         """Self < other."""
-        raise SyntaxError(
-            'Strict inequalities are not allowed in convex programs.')
+        raise SyntaxError("Strict inequalities are not allowed in convex programs.")
 
     def __gt__(self, other):
         """Self > other."""
-        raise SyntaxError(
-            'Strict inequalities are not allowed in convex programs.')
+        raise SyntaxError("Strict inequalities are not allowed in convex programs.")
 
     def __ge__(self, other):
         """Self >= other, return CostInequalityConstraint."""
@@ -124,22 +124,19 @@ class CombinedCosts(Cost):
     def __init__(self, costs, multipliers):
         for cost in costs:
             if not isinstance(cost, Cost):
-                raise SyntaxError(
-                    "You can only sum cost instances to other cost instances.")
+                raise SyntaxError("You can only sum cost instances to other cost instances.")
         self.costs = costs
         self.multipliers = multipliers
 
     def __add__(self, other):
         """Add other (combined) cost to self."""
         if isinstance(other, CombinedCosts):
-            return CombinedCosts(self.costs + other.costs,
-                                 self.multipliers + other.multipliers)
+            return CombinedCosts(self.costs + other.costs, self.multipliers + other.multipliers)
         return CombinedCosts(self.costs + [other], self.multipliers + [1.0])
 
     def __mul__(self, other):
         """Multiply by constant."""
-        return CombinedCosts(self.costs,
-                             [el * other for el in self.multipliers])
+        return CombinedCosts(self.costs, [el * other for el in self.multipliers])
 
     def initialize_estimator_recursive(self, universe, trading_calendar):
         """Iterate over constituent costs.
@@ -149,8 +146,7 @@ class CombinedCosts(Cost):
         :param trading_calendar: Future (including current) trading calendar.
         :type trading_calendar: pandas.DatetimeIndex
         """
-        _ = [el.initialize_estimator_recursive(universe, trading_calendar)
-            for el in self.costs]
+        _ = [el.initialize_estimator_recursive(universe, trading_calendar) for el in self.costs]
 
     def values_in_time_recursive(self, **kwargs):
         """Iterate over constituent costs.
@@ -181,9 +177,9 @@ class CombinedCosts(Cost):
         """
         expression = 0
         for multiplier, cost in zip(self.multipliers, self.costs):
-            add = (multiplier.current_value
-                if hasattr(multiplier, 'current_value') else multiplier) *\
-                    cost.compile_to_cvxpy(w_plus, z, w_plus_minus_w_bm)
+            add = (
+                multiplier.current_value if hasattr(multiplier, "current_value") else multiplier
+            ) * cost.compile_to_cvxpy(w_plus, z, w_plus_minus_w_bm)
             if not add.is_dcp():
                 raise ConvexSpecificationError(cost * multiplier)
             if not add.is_concave():
@@ -198,24 +194,24 @@ class CombinedCosts(Cost):
             instances.
         :rtype: list
         """
-        return sum([el.collect_hyperparameters() for el in self.costs], []) +\
-            sum([el.collect_hyperparameters() for el in self.multipliers if
-                hasattr(el, 'collect_hyperparameters')], [])
+        return sum([el.collect_hyperparameters() for el in self.costs], []) + sum(
+            [el.collect_hyperparameters() for el in self.multipliers if hasattr(el, "collect_hyperparameters")], []
+        )
 
     def __repr__(self):
         """Pretty-print."""
-        result = ''
+        result = ""
         for i, (mult, cost) in enumerate(zip(self.multipliers, self.costs)):
             if not isinstance(mult, HyperParameter):
                 if mult == 0:
                     continue
                 if mult < 0:
-                    result += ' - ' if i > 0 else '-'
+                    result += " - " if i > 0 else "-"
                 else:
-                    result += ' + ' if i > 0 else ''
-                result += (str(abs(mult)) + ' * ' if abs(mult) != 1 else '')
+                    result += " + " if i > 0 else ""
+                result += str(abs(mult)) + " * " if abs(mult) != 1 else ""
             else:
-                result += str(mult) + ' * '
+                result += str(mult) + " * "
             result += cost.__repr__()
         return result
 
@@ -228,11 +224,12 @@ class CombinedCosts(Cost):
         We will probably re-factor this, or make it public.
         """
         return CombinedCosts(
-            costs = [el._copy_keeping_multipliers()
-                if hasattr(el, '_copy_keeping_multipliers')
-                    else copy.deepcopy(el)
-                        for el in self.costs],
-            multipliers = self.multipliers)
+            costs=[
+                el._copy_keeping_multipliers() if hasattr(el, "_copy_keeping_multipliers") else copy.deepcopy(el)
+                for el in self.costs
+            ],
+            multipliers=self.multipliers,
+        )
 
 
 class SoftConstraint(Cost):
@@ -267,14 +264,13 @@ class SoftConstraint(Cost):
         """
 
         try:
-            expr = (self.constraint._compile_constr_to_cvxpy(
-                w_plus, z, w_plus_minus_w_bm) - self.constraint._rhs())
+            expr = self.constraint._compile_constr_to_cvxpy(w_plus, z, w_plus_minus_w_bm) - self.constraint._rhs()
 
         except AttributeError as exc:
             raise SyntaxError(
                 f"{self.__class__.__name__} can only be used with"
                 " EqualityConstraint or InequalityConstraint instances."
-                    ) from exc
+            ) from exc
 
         if isinstance(self.constraint, EqualityConstraint):
             return cp.sum(cp.abs(expr))
@@ -293,7 +289,7 @@ def _annual_percent_to_per_period(value, ppy):
     :returns: Per-period return.
     :rtype: float
     """
-    return resample_returns(returns=value/100, periods=ppy)
+    return resample_returns(returns=value / 100, periods=ppy)
 
 
 class SimulatorCost:
@@ -313,7 +309,7 @@ class SimulatorCost:
         :param kwargs: Keyword arguments.
         :type kwargs: dict
         """
-        raise NotImplementedError # pragma: no cover
+        raise NotImplementedError  # pragma: no cover
 
 
 class HoldingCost(Cost, SimulatorCost):
@@ -395,15 +391,10 @@ class HoldingCost(Cost, SimulatorCost):
     :type periods_per_year: float or None
     """
 
-    def __init__(self, short_fees=None, long_fees=None, dividends=None,
-                 periods_per_year=None):
-
-        self.short_fees = None if short_fees is None else DataEstimator(
-            short_fees)
-        self.long_fees = None if long_fees is None else DataEstimator(
-            long_fees)
-        self.dividends = None if dividends is None else DataEstimator(
-            dividends)
+    def __init__(self, short_fees=None, long_fees=None, dividends=None, periods_per_year=None):
+        self.short_fees = None if short_fees is None else DataEstimator(short_fees)
+        self.long_fees = None if long_fees is None else DataEstimator(long_fees)
+        self.dividends = None if dividends is None else DataEstimator(dividends)
         self.periods_per_year = periods_per_year
 
     def initialize_estimator(self, universe, trading_calendar):
@@ -420,12 +411,10 @@ class HoldingCost(Cost, SimulatorCost):
         """
 
         if self.short_fees is not None:
-            self._short_fees_parameter = cp.Parameter(len(universe) - 1,
-                nonneg=True)
+            self._short_fees_parameter = cp.Parameter(len(universe) - 1, nonneg=True)
 
         if self.long_fees is not None:
-            self._long_fees_parameter = cp.Parameter(len(universe) - 1,
-                nonneg=True)
+            self._long_fees_parameter = cp.Parameter(len(universe) - 1, nonneg=True)
 
         if self.dividends is not None:
             self._dividends_parameter = cp.Parameter(len(universe) - 1)
@@ -444,26 +433,25 @@ class HoldingCost(Cost, SimulatorCost):
         :type kwargs: dict
         """
 
-        if not ((self.short_fees is None)
-                and (self.long_fees is None)
-                and (self.dividends is None)):
-            ppy = periods_per_year_from_datetime_index(
-                past_returns.index) if self.periods_per_year is None else \
-                    self.periods_per_year
+        if not ((self.short_fees is None) and (self.long_fees is None) and (self.dividends is None)):
+            ppy = (
+                periods_per_year_from_datetime_index(past_returns.index)
+                if self.periods_per_year is None
+                else self.periods_per_year
+            )
 
         if self.short_fees is not None:
-            self._short_fees_parameter.value = np.ones(
-                past_returns.shape[1]-1) * _annual_percent_to_per_period(
-                    self.short_fees.current_value, ppy)
+            self._short_fees_parameter.value = np.ones(past_returns.shape[1] - 1) * _annual_percent_to_per_period(
+                self.short_fees.current_value, ppy
+            )
 
         if self.long_fees is not None:
-            self._long_fees_parameter.value = np.ones(
-                past_returns.shape[1]-1) * _annual_percent_to_per_period(
-                    self.long_fees.current_value, ppy)
+            self._long_fees_parameter.value = np.ones(past_returns.shape[1] - 1) * _annual_percent_to_per_period(
+                self.long_fees.current_value, ppy
+            )
 
         if self.dividends is not None:
-            self._dividends_parameter.value =\
-                np.ones(past_returns.shape[1]-1) * self.dividends.current_value
+            self._dividends_parameter.value = np.ones(past_returns.shape[1] - 1) * self.dividends.current_value
 
     def compile_to_cvxpy(self, w_plus, z, w_plus_minus_w_bm):
         """Compile cost to cvxpy expression.
@@ -480,7 +468,7 @@ class HoldingCost(Cost, SimulatorCost):
         :rtype: cvxpy.expression
         """
 
-        expression = 0.
+        expression = 0.0
 
         if self.short_fees is not None:
             expression += self._short_fees_parameter.T @ cp.neg(w_plus[:-1])
@@ -520,27 +508,28 @@ class HoldingCost(Cost, SimulatorCost):
         :rtype: float
         """
 
-        year_divided_by_period = pd.Timedelta('365.24d') / (t_next - t)
+        year_divided_by_period = pd.Timedelta("365.24d") / (t_next - t)
 
-        cost = 0.
+        cost = 0.0
 
         # TODO this is a temporary fix,
         # we should plug this into a recursive tree
         for est in [self.short_fees, self.long_fees, self.dividends]:
             if est is not None:
-                est.initialize_estimator_recursive(universe=h_plus.index,
-                                              trading_calendar=[t])
+                est.initialize_estimator_recursive(universe=h_plus.index, trading_calendar=[t])
                 est.values_in_time_recursive(t=t)
 
         if self.short_fees is not None:
-            cost += np.sum(_annual_percent_to_per_period(
-                self.short_fees.current_value, year_divided_by_period) * (
-                    -np.minimum(h_plus[:-1], 0.)))
+            cost += np.sum(
+                _annual_percent_to_per_period(self.short_fees.current_value, year_divided_by_period)
+                * (-np.minimum(h_plus[:-1], 0.0))
+            )
 
         if self.long_fees is not None:
-            cost += np.sum(_annual_percent_to_per_period(
-                self.long_fees.current_value,
-                year_divided_by_period) * np.maximum(h_plus[:-1], 0.))
+            cost += np.sum(
+                _annual_percent_to_per_period(self.long_fees.current_value, year_divided_by_period)
+                * np.maximum(h_plus[:-1], 0.0)
+            )
 
         if self.dividends is not None:
             # we have a minus sign because costs are deducted from PnL
@@ -573,7 +562,6 @@ class StocksHoldingCost(HoldingCost, SimulatorCost):
     """
 
     def __init__(self, short_fees=5):
-
         super().__init__(short_fees=short_fees)
 
 
@@ -585,12 +573,11 @@ class TransactionCost(Cost):
     to the stock market.
     """
 
-    def __init__(self, a=None, pershare_cost=None, b=0., window_sigma_est=None,
-                 window_volume_est=None, exponent=None):
-
+    def __init__(
+        self, a=None, pershare_cost=None, b=0.0, window_sigma_est=None, window_volume_est=None, exponent=None
+    ):
         self.a = None if a is None else DataEstimator(a)
-        self.pershare_cost = None if pershare_cost is None else DataEstimator(
-            pershare_cost)
+        self.pershare_cost = None if pershare_cost is None else DataEstimator(pershare_cost)
         self.b = None if b is None else DataEstimator(b)
         self.window_sigma_est = window_sigma_est
         self.window_volume_est = window_volume_est
@@ -609,15 +596,11 @@ class TransactionCost(Cost):
         :type trading_calendar: pandas.DatetimeIndex
         """
         if self.a is not None or self.pershare_cost is not None:
-            self.first_term_multiplier = cp.Parameter(
-                len(universe)-1, nonneg=True)
+            self.first_term_multiplier = cp.Parameter(len(universe) - 1, nonneg=True)
         if self.b is not None:
-            self.second_term_multiplier = cp.Parameter(
-                len(universe)-1, nonneg=True)
+            self.second_term_multiplier = cp.Parameter(len(universe) - 1, nonneg=True)
 
-    def values_in_time(
-        self, current_portfolio_value, past_returns, past_volumes,
-        current_prices, **kwargs):
+    def values_in_time(self, current_portfolio_value, past_returns, past_volumes, current_prices, **kwargs):
         """Update cvxpy parameters.
 
         :raises SyntaxError: If the prices are missing from the market data.
@@ -634,16 +617,14 @@ class TransactionCost(Cost):
         :type kwargs: dict
         """
 
-        tmp = 0.
+        tmp = 0.0
 
         if self.a is not None:
             _ = self.a.current_value
-            tmp += _ *\
-                np.ones(past_returns.shape[1]-1) if np.isscalar(_) else _
+            tmp += _ * np.ones(past_returns.shape[1] - 1) if np.isscalar(_) else _
         if self.pershare_cost is not None:
             if current_prices is None:
-                raise SyntaxError("If you don't provide prices you",
-                                  " should set pershare_cost to None")
+                raise SyntaxError("If you don't provide prices you", " should set pershare_cost to None")
             assert not np.any(current_prices.isnull())
             # assert not np.any(current_prices == 0.)
             tmp += self.pershare_cost.current_value / current_prices.values
@@ -652,27 +633,22 @@ class TransactionCost(Cost):
             self.first_term_multiplier.value = tmp
 
         if self.b is not None:
-
-            if (self.window_sigma_est is None) or\
-                    (self.window_volume_est is None):
+            if (self.window_sigma_est is None) or (self.window_volume_est is None):
                 ppy = periods_per_year_from_datetime_index(past_returns.index)
-            windowsigma = ppy if (
-                self.window_sigma_est is None) else self.window_sigma_est
-            windowvolume = ppy if (
-                self.window_volume_est is None) else self.window_volume_est
+            windowsigma = ppy if (self.window_sigma_est is None) else self.window_sigma_est
+            windowvolume = ppy if (self.window_volume_est is None) else self.window_volume_est
 
             # TODO refactor this with forecast.py logic
-            sigma_est = np.sqrt(
-                (past_returns.iloc[-windowsigma:, :-1]**2).mean()).values
-            volume_est = past_volumes.iloc[-windowvolume:].mean().values + 1E-8
+            sigma_est = np.sqrt((past_returns.iloc[-windowsigma:, :-1] ** 2).mean()).values
+            volume_est = past_volumes.iloc[-windowvolume:].mean().values + 1e-8
 
-            self.second_term_multiplier.value =\
-                self.b.current_value * sigma_est * (current_portfolio_value /
-                     volume_est) ** (
-                         (2 if self.exponent is None else self.exponent) - 1)
+            self.second_term_multiplier.value = (
+                self.b.current_value
+                * sigma_est
+                * (current_portfolio_value / volume_est) ** ((2 if self.exponent is None else self.exponent) - 1)
+            )
 
-    def simulate(self, t, u, past_returns, current_returns, current_volumes,
-                  current_prices, **kwargs):
+    def simulate(self, t, u, past_returns, current_returns, current_volumes, current_prices, **kwargs):
         """Simulate transaction cost in cash units.
 
         :raises SyntaxError: If the market returns are not available in the
@@ -697,43 +673,43 @@ class TransactionCost(Cost):
         :rtype: float
         """
 
-        result = 0.
+        result = 0.0
         if self.pershare_cost is not None:
             if current_prices is None:
-                raise SyntaxError(
-                    "If you don't provide prices you should"
-                    " set pershare_cost to None")
+                raise SyntaxError("If you don't provide prices you should" " set pershare_cost to None")
             result += self.pershare_cost.values_in_time_recursive(t=t) * int(
-                sum(np.abs(u.iloc[:-1] + 1E-6) / current_prices.values))
+                sum(np.abs(u.iloc[:-1] + 1e-6) / current_prices.values)
+            )
 
         if self.a is not None:
-            result += sum(self.a.values_in_time_recursive(t=t)
-                          * np.abs(u.iloc[:-1]))
+            result += sum(self.a.values_in_time_recursive(t=t) * np.abs(u.iloc[:-1]))
 
         if self.b is not None:
-
             if self.window_sigma_est is None:
                 windowsigma = average_periods_per_year(
-                    num_periods=len(past_returns)+1,
-                    first_time=past_returns.index[0], last_time=t)
+                    num_periods=len(past_returns) + 1, first_time=past_returns.index[0], last_time=t
+                )
             else:
                 windowsigma = self.window_sigma_est
 
-            exponent = (1.5 if self.exponent is None else self.exponent)
+            exponent = 1.5 if self.exponent is None else self.exponent
 
-            sigma = np.std(pd.concat(
-                [past_returns.iloc[-windowsigma + 1:, :-1],
-                pd.DataFrame(current_returns.iloc[:-1]).T], axis=0), axis=0)
+            sigma = np.std(
+                pd.concat(
+                    [past_returns.iloc[-windowsigma + 1 :, :-1], pd.DataFrame(current_returns.iloc[:-1]).T], axis=0
+                ),
+                axis=0,
+            )
             if current_volumes is None:
                 raise SyntaxError(
                     "If you don't provide volumes you should set b to None"
-                    f" in the {self.__class__.__name__} simulator cost")
+                    f" in the {self.__class__.__name__} simulator cost"
+                )
             # we add 1E-8 to the volumes to prevent 0 volumes error
             # (trades are cancelled on 0 volumes)
-            result += (np.abs(u.iloc[:-1])**exponent) @ (
-                self.b.values_in_time_recursive(t=t) *
-                sigma / ((current_volumes + 1E-8) ** (
-                exponent - 1)))
+            result += (np.abs(u.iloc[:-1]) ** exponent) @ (
+                self.b.values_in_time_recursive(t=t) * sigma / ((current_volumes + 1e-8) ** (exponent - 1))
+            )
 
         assert not np.isnan(result)
         assert not np.isinf(result)
@@ -759,8 +735,8 @@ class TransactionCost(Cost):
             expression += cp.abs(z[:-1]).T @ self.first_term_multiplier
             assert expression.is_convex()
         if self.b is not None:
-            expression += (cp.abs(z[:-1]) ** (
-                2 if self.exponent is None else self.exponent)
+            expression += (
+                cp.abs(z[:-1]) ** (2 if self.exponent is None else self.exponent)
             ).T @ self.second_term_multiplier
             assert expression.is_convex()
         return expression
@@ -804,15 +780,19 @@ class StocksTransactionCost(TransactionCost):
     :type exponent: float or None
     """
 
-    def __init__(self, a=0., pershare_cost=0.005, b=1.0, window_sigma_est=None,
-                 window_volume_est=None, exponent=1.5):
+    def __init__(self, a=0.0, pershare_cost=0.005, b=1.0, window_sigma_est=None, window_volume_est=None, exponent=1.5):
+        super().__init__(
+            a=a,
+            pershare_cost=pershare_cost,
+            b=b,
+            window_sigma_est=window_sigma_est,
+            window_volume_est=window_volume_est,
+            exponent=exponent,
+        )
 
-        super().__init__(a=a, pershare_cost=pershare_cost, b=b,
-                         window_sigma_est=window_sigma_est,
-                         window_volume_est=window_volume_est,
-                         exponent=exponent)
 
 # Aliases
+
 
 class TcostModel(TransactionCost):
     """Alias of :class:`TransactionCost`.
@@ -820,6 +800,7 @@ class TcostModel(TransactionCost):
     As it was defined originally in :paper:`section 6.1 <section.6.1>` of the
     paper.
     """
+
 
 class HcostModel(HoldingCost):
     """Alias of :class:`HoldingCost`.

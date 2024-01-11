@@ -37,7 +37,7 @@ from .data import BASE_LOCATION, DownloadedMarketData, UserProvidedMarketData
 from .result import BacktestResult
 
 PPY = 252
-__all__ = ['StockMarketSimulator', 'MarketSimulator']
+__all__ = ["StockMarketSimulator", "MarketSimulator"]
 
 
 class MarketSimulator:
@@ -113,34 +113,40 @@ class MarketSimulator:
     :type round_trades: bool
     """
 
-    def __init__(self, universe=(), returns=None, volumes=None,
-                 prices=None, market_data=None, costs=(), round_trades=False,
-                 datasource='YahooFinance',
-                 cash_key="USDOLLAR",
-                 base_location=BASE_LOCATION,
-                 min_history=pd.Timedelta('365.24d'),
-                 trading_frequency=None):
+    def __init__(
+        self,
+        universe=(),
+        returns=None,
+        volumes=None,
+        prices=None,
+        market_data=None,
+        costs=(),
+        round_trades=False,
+        datasource="YahooFinance",
+        cash_key="USDOLLAR",
+        base_location=BASE_LOCATION,
+        min_history=pd.Timedelta("365.24d"),
+        trading_frequency=None,
+    ):
         """Initialize the Simulator and download data if necessary."""
         self.base_location = Path(base_location)
 
-        if not market_data is None:
+        if market_data is not None:
             self.market_data = market_data
         else:
-
-            if (len(universe) == 0) and prices is None:
-                if round_trades:
-                    raise SyntaxError(
-                        "If you don't specify prices you can't request "
-                        + "`round_trades`.")
+            if (len(universe) == 0) and prices is None and round_trades:
+                raise SyntaxError("If you don't specify prices you can't request " + "`round_trades`.")
 
             if len(universe) == 0:
                 self.market_data = UserProvidedMarketData(
                     returns=returns,
-                    volumes=volumes, prices=prices,
+                    volumes=volumes,
+                    prices=prices,
                     cash_key=cash_key,
                     base_location=base_location,
                     min_history=min_history,
-                    trading_frequency=trading_frequency)
+                    trading_frequency=trading_frequency,
+                )
             else:
                 self.market_data = DownloadedMarketData(
                     universe=universe,
@@ -148,12 +154,14 @@ class MarketSimulator:
                     base_location=base_location,
                     min_history=min_history,
                     trading_frequency=trading_frequency,
-                    datasource=datasource)
+                    datasource=datasource,
+                )
 
         self.round_trades = round_trades
         self.costs = [el() if isinstance(el, type) else el for el in costs]
         # self.lock = Lock()
-       # self.kwargs = kwargs
+
+    # self.kwargs = kwargs
 
     @staticmethod
     def _round_trade_vector(u, current_prices):
@@ -164,8 +172,8 @@ class MarketSimulator:
         return result
 
     def simulate(
-            self, t, t_next, h, policy, past_returns, current_returns,
-            past_volumes, current_volumes, current_prices):
+        self, t, t_next, h, policy, past_returns, current_returns, past_volumes, current_volumes, current_prices
+    ):
         """Get next portfolio and statistics used by Backtest for reporting.
 
         The signature of this method differs from other estimators
@@ -202,10 +210,13 @@ class MarketSimulator:
         # evaluate the policy
         s = time.time()
         policy_w = policy.values_in_time_recursive(
-            t=t, current_weights=current_weights,
+            t=t,
+            current_weights=current_weights,
             current_portfolio_value=current_portfolio_value,
-            past_returns=past_returns, past_volumes=past_volumes,
-            current_prices=current_prices)
+            past_returns=past_returns,
+            past_volumes=past_volumes,
+            current_prices=current_prices,
+        )
 
         z = policy_w - current_weights
 
@@ -215,8 +226,8 @@ class MarketSimulator:
         z.iloc[-1] = -sum(z.iloc[:-1])
 
         # only in Python < 3.12 https://github.com/python/cpython/issues/111933
-        if sys.version.split(' ', maxsplit=1)[0] < '3.12':
-            assert sum(z) == 0.
+        if sys.version.split(" ", maxsplit=1)[0] < "3.12":
+            assert sum(z) == 0.0
 
         # trades in dollars
         u = z * current_portfolio_value
@@ -228,8 +239,10 @@ class MarketSimulator:
                 logging.info(
                     "At time %s the simulator canceled trades on assets %s"
                     + " because their market volumes for the period are zero.",
-                    t, non_tradable_stocks)
-            u[non_tradable_stocks] = 0.
+                    t,
+                    non_tradable_stocks,
+                )
+            u[non_tradable_stocks] = 0.0
 
         # round trades
         if self.round_trades:
@@ -239,24 +252,29 @@ class MarketSimulator:
         u.iloc[-1] = -sum(u.iloc[:-1])
 
         # only in Python < 3.12 https://github.com/python/cpython/issues/111933
-        if sys.version.split(' ', maxsplit=1)[0] < '3.12':
-            assert sum(u) == 0.
+        if sys.version.split(" ", maxsplit=1)[0] < "3.12":
+            assert sum(u) == 0.0
 
         # compute post-trade holdings (including cash balance)
         h_plus = h + u
 
         # evaluate cost functions
-        realized_costs = {cost.__class__.__name__: cost.simulate(
-            t=t, u=u,  h_plus=h_plus,
-            past_volumes=past_volumes,
-            current_volumes=current_volumes,
-            past_returns=past_returns,
-            current_returns=current_returns,
-            current_prices=current_prices,
-            t_next=t_next,
-            periods_per_year=self.market_data.periods_per_year,
-            windowsigma=self.market_data.periods_per_year)
-                for cost in self.costs}
+        realized_costs = {
+            cost.__class__.__name__: cost.simulate(
+                t=t,
+                u=u,
+                h_plus=h_plus,
+                past_volumes=past_volumes,
+                current_volumes=current_volumes,
+                past_returns=past_returns,
+                current_returns=current_returns,
+                current_prices=current_prices,
+                t_next=t_next,
+                periods_per_year=self.market_data.periods_per_year,
+                windowsigma=self.market_data.periods_per_year,
+            )
+            for cost in self.costs
+        }
 
         # initialize tomorrow's holdings
         h_next = pd.Series(h_plus, copy=True)
@@ -266,23 +284,21 @@ class MarketSimulator:
 
         # multiply positions (including cash) by market returns
         assert not np.any(current_returns.isnull())
-        h_next *= (1 + current_returns)
+        h_next *= 1 + current_returns
 
         return h_next, z, u, realized_costs, policy_time
 
     def _get_initialized_policy(self, orig_policy, universe, trading_calendar):
-
         policy = copy.deepcopy(orig_policy)
 
-        policy.initialize_estimator_recursive(
-            universe=universe, trading_calendar=trading_calendar)
+        policy.initialize_estimator_recursive(universe=universe, trading_calendar=trading_calendar)
 
         # if policy uses a cache load it from disk
-        if hasattr(policy, '_cache'):
-            logging.info('Trying to load cache from disk...')
+        if hasattr(policy, "_cache"):
+            logging.info("Trying to load cache from disk...")
             policy._cache = _load_cache(
-              signature=self.market_data.partial_universe_signature(universe),
-              base_location=self.base_location)
+                signature=self.market_data.partial_universe_signature(universe), base_location=self.base_location
+            )
 
         # if hasattr(policy, 'compile_to_cvxpy'):
         #     policy.compile_to_cvxpy()
@@ -290,57 +306,53 @@ class MarketSimulator:
         return policy
 
     def _finalize_policy(self, policy, universe):
-        if hasattr(policy, '_cache'):
-            logging.info('Storing cache from policy to disk...')
+        if hasattr(policy, "_cache"):
+            logging.info("Storing cache from policy to disk...")
             _store_cache(
-              cache=policy._cache,
-              signature=self.market_data.partial_universe_signature(universe),
-              base_location=self.base_location)
+                cache=policy._cache,
+                signature=self.market_data.partial_universe_signature(universe),
+                base_location=self.base_location,
+            )
 
     def _backtest(self, policy, start_time, end_time, h):
         """Run a backtest with changing universe."""
 
         timer = time.time()
 
-        trading_calendar = self.market_data.trading_calendar(
-            start_time, end_time, include_end=True)
+        trading_calendar = self.market_data.trading_calendar(start_time, end_time, include_end=True)
 
-        _, current_returns, _, _, _ = self.market_data.serve(
-            trading_calendar[0])
+        _, current_returns, _, _, _ = self.market_data.serve(trading_calendar[0])
         universe = current_returns.index
 
-        used_policy = self._get_initialized_policy(
-            policy, universe=universe, trading_calendar=trading_calendar)
+        used_policy = self._get_initialized_policy(policy, universe=universe, trading_calendar=trading_calendar)
 
-        result = BacktestResult(
-            universe=universe, trading_calendar=trading_calendar,
-            costs=self.costs)
+        result = BacktestResult(universe=universe, trading_calendar=trading_calendar, costs=self.costs)
 
         for t, t_next in zip(trading_calendar[:-1], trading_calendar[1:]):
-
-            past_returns, current_returns, past_volumes, current_volumes, \
-                 current_prices = self.market_data.serve(t)
+            past_returns, current_returns, past_volumes, current_volumes, current_prices = self.market_data.serve(t)
             current_universe = current_returns.index
 
             if not current_universe.equals(h.index):
-
                 self._finalize_policy(used_policy, h.index)
 
                 h = self._adjust_h_new_universe(h, current_universe)
                 used_policy = self._get_initialized_policy(
-                    policy, universe=current_universe,
-                    trading_calendar=trading_calendar[trading_calendar >= t])
+                    policy, universe=current_universe, trading_calendar=trading_calendar[trading_calendar >= t]
+                )
 
             h_next, z, u, realized_costs, policy_time = self.simulate(
-                t=t, h=h, policy=used_policy,
+                t=t,
+                h=h,
+                policy=used_policy,
                 t_next=t_next,
                 past_returns=past_returns,
                 current_returns=current_returns,
                 past_volumes=past_volumes,
                 current_volumes=current_volumes,
-                current_prices=current_prices)
+                current_prices=current_prices,
+            )
 
-            if hasattr(used_policy, 'benchmark'):
+            if hasattr(used_policy, "benchmark"):
                 w_bm = used_policy.benchmark.current_value
                 bm_ret = w_bm @ current_returns
             else:
@@ -350,22 +362,27 @@ class MarketSimulator:
 
             timer = time.time()
 
-            result._log_trading(t=t, h=h, z=z, u=u, costs=realized_costs,
-                                policy_time=policy_time,
-                                simulator_time=simulator_time,
-                                cash_return=current_returns.iloc[-1],
-                                benchmark_return=bm_ret)
+            result._log_trading(
+                t=t,
+                h=h,
+                z=z,
+                u=u,
+                costs=realized_costs,
+                policy_time=policy_time,
+                simulator_time=simulator_time,
+                cash_return=current_returns.iloc[-1],
+                benchmark_return=bm_ret,
+            )
 
             h = h_next
 
-            if sum(h) <= 0.: # bankruptcy
-                logging.warning('Back-test ended in bankruptcy at time %s!', t)
+            if sum(h) <= 0.0:  # bankruptcy
+                logging.warning("Back-test ended in bankruptcy at time %s!", t)
                 break
 
         self._finalize_policy(used_policy, h.index)
 
-        result._log_final(t, t_next, h,
-            extra_simulator_time=time.time() - timer)
+        result._log_final(t, t_next, h, extra_simulator_time=time.time() - timer)
 
         return result
 
@@ -403,7 +420,7 @@ class MarketSimulator:
         assert new_universe[-1] == h.index[-1]
 
         intersection = pd.Index(set(new_universe).intersection(h.index))
-        new_h = pd.Series(0., new_universe)
+        new_h = pd.Series(0.0, new_universe)
         new_h[intersection] = h[intersection]
 
         new_assets = pd.Index(set(new_universe).difference(h.index))
@@ -416,7 +433,10 @@ class MarketSimulator:
             logging.info(
                 "Adjusting h vector by removing assets %s."
                 + " Their current market value of %s is added"
-                + " to the cash account.", remove_assets, total_liquidation)
+                + " to the cash account.",
+                remove_assets,
+                total_liquidation,
+            )
             new_h.iloc[-1] += total_liquidation
 
         return new_h
@@ -425,8 +445,16 @@ class MarketSimulator:
     def _worker(policy, simulator, start_time, end_time, h):
         return simulator._backtest(policy, start_time, end_time, h)
 
-    def optimize_hyperparameters(self, policy, start_time=None, end_time=None,
-        initial_value=1E6, h=None, objective='sharpe_ratio', parallel=True):
+    def optimize_hyperparameters(
+        self,
+        policy,
+        start_time=None,
+        end_time=None,
+        initial_value=1e6,
+        h=None,
+        objective="sharpe_ratio",
+        parallel=True,
+    ):
         """Optimize hyperparameters to maximize back-test objective.
 
         :param policy: Trading policy with symbolic hyperparameters.
@@ -466,19 +494,19 @@ class MarketSimulator:
 
         results = {}
 
-        current_result = self.backtest(policy, start_time=start_time,
-            end_time=end_time,
-            initial_value=initial_value, h=h)
+        current_result = self.backtest(
+            policy, start_time=start_time, end_time=end_time, initial_value=initial_value, h=h
+        )
 
         current_objective = getattr(current_result, objective)
 
         results[str(policy)] = current_objective
 
         for i in range(100):
-            print('iteration', i)
+            print("iteration", i)
             # print('Current optimal hyper-parameters:')
             # print(policy)
-            print('Current objective:')
+            print("Current objective:")
             print(current_objective)
             # print()
             # print('Current result:')
@@ -505,13 +533,16 @@ class MarketSimulator:
             if len(test_policies) == 0:
                 break
 
-            results_partial = self.backtest_many(test_policies,
-                start_time=start_time, end_time=end_time,
+            results_partial = self.backtest_many(
+                test_policies,
+                start_time=start_time,
+                end_time=end_time,
                 initial_value=initial_value,
-                h=h, parallel=parallel)
+                h=h,
+                parallel=parallel,
+            )
 
-            objectives_partial = [getattr(res, objective)
-                for res in results_partial]
+            objectives_partial = [getattr(res, objective) for res in results_partial]
 
             for pol, obje in zip(test_policies, objectives_partial):
                 results[str(pol)] = obje
@@ -528,9 +559,7 @@ class MarketSimulator:
 
         return policy
 
-    def backtest(
-            self, policy, start_time=None, end_time=None, initial_value=1E6,
-            h=None):
+    def backtest(self, policy, start_time=None, end_time=None, initial_value=1e6, h=None):
         """Back-test a trading policy.
 
         The default initial portfolio is all cash, or you can pass any
@@ -558,16 +587,18 @@ class MarketSimulator:
         :rtype: :class:`cvxportfolio.BacktestResult`
         """
         return self.backtest_many(
-            [policy], start_time=start_time, end_time=end_time,
-            initial_value=initial_value, h=None if h is None else [h],
-            parallel=False)[0]
+            [policy],
+            start_time=start_time,
+            end_time=end_time,
+            initial_value=initial_value,
+            h=None if h is None else [h],
+            parallel=False,
+        )[0]
 
     # Alias to match original syntax
     run_backtest = backtest
 
-    def backtest_many(
-            self, policies, start_time=None, end_time=None, initial_value=1E6,
-            h=None, parallel=True):
+    def backtest_many(self, policies, start_time=None, end_time=None, initial_value=1e6, h=None, parallel=True):
         """Back-test many trading policies.
 
         The default initial portfolio is all cash, or you can pass any
@@ -610,31 +641,28 @@ class MarketSimulator:
         :rtype: list
         """
 
-        if not hasattr(policies, '__len__'):
-            raise SyntaxError('You should pass a list of policies.')
+        if not hasattr(policies, "__len__"):
+            raise SyntaxError("You should pass a list of policies.")
 
-        if not hasattr(h, '__len__'):
+        if not hasattr(h, "__len__"):
             h = [h] * len(policies)
 
         if not len(policies) == len(h):
             raise SyntaxError(
-                'If passing lists of policies and initial portfolios'
-                + 'they must have the same length.')
+                "If passing lists of policies and initial portfolios" + "they must have the same length."
+            )
 
         if start_time is not None:
             start_time = pd.Timestamp(start_time)
             if start_time.tz is None:
-                start_time = start_time.tz_localize(
-                    self.market_data.trading_calendar().tz)
+                start_time = start_time.tz_localize(self.market_data.trading_calendar().tz)
 
         if end_time is not None:
             end_time = pd.Timestamp(end_time)
             if end_time.tz is None:
-                end_time = end_time.tz_localize(
-                    self.market_data.trading_calendar().tz)
+                end_time = end_time.tz_localize(self.market_data.trading_calendar().tz)
 
-        trading_calendar_inclusive = self.market_data.trading_calendar(
-            start_time, end_time, include_end=True)
+        trading_calendar_inclusive = self.market_data.trading_calendar(start_time, end_time, include_end=True)
         start_time = trading_calendar_inclusive[0]
         end_time = trading_calendar_inclusive[-1]
         _, initial_returns, _, _, _ = self.market_data.serve(start_time)
@@ -643,13 +671,12 @@ class MarketSimulator:
         # initialize policies and get initial portfolios
         for i in range(len(policies)):
             if h[i] is None:
-                h[i] = pd.Series(0., initial_universe)
+                h[i] = pd.Series(0.0, initial_universe)
                 h[i].iloc[-1] = initial_value
 
         n = len(policies)
 
-        zip_args = zip(policies, [self] * n,
-                       [start_time] * n, [end_time] * n, h)
+        zip_args = zip(policies, [self] * n, [start_time] * n, [end_time] * n, h)
 
         if (not parallel) or len(policies) == 1:
             result = list(starmap(self._worker, zip_args))
@@ -698,13 +725,22 @@ class StockMarketSimulator(MarketSimulator):
     :type kwargs: dict
     """
 
-    def __init__(self, universe=(),
-                 costs=(StocksTransactionCost, StocksHoldingCost),
-                 round_trades=True,
-                 cash_key="USDOLLAR", base_location=BASE_LOCATION,
-                 trading_frequency=None, **kwargs):
-
-        super().__init__(universe=universe,
-                         costs=costs, round_trades=round_trades,
-                         cash_key=cash_key, base_location=base_location,
-                         trading_frequency=trading_frequency, **kwargs)
+    def __init__(
+        self,
+        universe=(),
+        costs=(StocksTransactionCost, StocksHoldingCost),
+        round_trades=True,
+        cash_key="USDOLLAR",
+        base_location=BASE_LOCATION,
+        trading_frequency=None,
+        **kwargs
+    ):
+        super().__init__(
+            universe=universe,
+            costs=costs,
+            round_trades=round_trades,
+            cash_key=cash_key,
+            base_location=base_location,
+            trading_frequency=trading_frequency,
+            **kwargs
+        )

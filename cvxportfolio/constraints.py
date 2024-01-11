@@ -45,7 +45,7 @@ import cvxpy as cp
 import numpy as np
 
 from .estimator import CvxpyExpressionEstimator, DataEstimator, Estimator
-from .forecast import HistoricalFactorizedCovariance
+from .forecast import HistoricalFactorizedCovariance, project_on_psd_cone_and_factorize
 
 __all__ = [
     "LongOnly",
@@ -66,7 +66,7 @@ __all__ = [
     "MinWeightsAtTimes",
     "MaxWeightsAtTimes",
     "TurnoverLimit",
-    "MinCashBalance"
+    "MinCashBalance",
 ]
 
 
@@ -86,7 +86,7 @@ class Constraint(CvxpyExpressionEstimator):
         :returns: some cvxpy.constraints object, or list of those
         :rtype: cvxpy.constraints, list
         """
-        raise NotImplementedError # pragma: no cover
+        raise NotImplementedError  # pragma: no cover
 
 
 class EqualityConstraint(Constraint):
@@ -114,16 +114,15 @@ class EqualityConstraint(Constraint):
         :returns: Cvxpy constraints object.
         :rtype: cvxpy.constraints
         """
-        return self._compile_constr_to_cvxpy(w_plus, z, w_plus_minus_w_bm) ==\
-            self._rhs()
+        return self._compile_constr_to_cvxpy(w_plus, z, w_plus_minus_w_bm) == self._rhs()
 
     def _compile_constr_to_cvxpy(self, w_plus, z, w_plus_minus_w_bm):
         """Cvxpy expression of the left-hand side of the constraint."""
-        raise NotImplementedError # pragma: no cover
+        raise NotImplementedError  # pragma: no cover
 
     def _rhs(self):
         """Cvxpy expression of the right-hand side of the constraint."""
-        raise NotImplementedError # pragma: no cover
+        raise NotImplementedError  # pragma: no cover
 
 
 class InequalityConstraint(Constraint):
@@ -151,16 +150,15 @@ class InequalityConstraint(Constraint):
         :returns: Cvxpy constraints object.
         :rtype: cvxpy.constraints
         """
-        return self._compile_constr_to_cvxpy(w_plus, z, w_plus_minus_w_bm) <=\
-            self._rhs()
+        return self._compile_constr_to_cvxpy(w_plus, z, w_plus_minus_w_bm) <= self._rhs()
 
     def _compile_constr_to_cvxpy(self, w_plus, z, w_plus_minus_w_bm):
         """Cvxpy expression of the left-hand side of the constraint."""
-        raise NotImplementedError # pragma: no cover
+        raise NotImplementedError  # pragma: no cover
 
     def _rhs(self):
         """Cvxpy expression of the right-hand side of the constraint."""
-        raise NotImplementedError # pragma: no cover
+        raise NotImplementedError  # pragma: no cover
 
 
 class CostInequalityConstraint(InequalityConstraint):
@@ -184,7 +182,7 @@ class CostInequalityConstraint(InequalityConstraint):
         return self.value.parameter
 
     def __repr__(self):
-        return self.cost.__repr__() + ' <= ' + self.value.__repr__()
+        return f"{self.cost.__repr__()} <= {self.value.__repr__()}"
 
 
 class NoCash(EqualityConstraint):
@@ -220,10 +218,13 @@ class MarketNeutral(EqualityConstraint):
         estimate the market benchmark.
     :type window: int
     """
+
     # TODO: refactor code to import MarketBenchmark, now it causes circular
     # imports
-    def __init__(self, window=250, #benchmark=MarketBenchmark
-        ):
+    def __init__(
+        self,
+        window=250,  # benchmark=MarketBenchmark
+    ):
         self.covarianceforecaster = HistoricalFactorizedCovariance()
         self.window = window
         # if type(benchmark) is type:
@@ -239,7 +240,7 @@ class MarketNeutral(EqualityConstraint):
         :param trading_calendar: Future (including current) trading calendar.
         :type trading_calendar: pandas.DatetimeIndex
         """
-        self.market_vector = cp.Parameter(len(universe)-1)
+        self.market_vector = cp.Parameter(len(universe) - 1)
 
     def values_in_time(self, past_volumes, **kwargs):
         """Update parameter with current market weights and covariance.
@@ -249,12 +250,11 @@ class MarketNeutral(EqualityConstraint):
         :param kwargs: Unused arguments passed to :meth:`values_in_time`.
         :type kwargs: dict
         """
-        tmp = past_volumes.iloc[-self.window:].mean()
+        tmp = past_volumes.iloc[-self.window :].mean()
         tmp /= sum(tmp)
         # tmp = self.benchmark.current_value.iloc[:-1]
 
-        tmp2 = self.covarianceforecaster.current_value @ (
-            self.covarianceforecaster.current_value.T @ tmp)
+        tmp2 = self.covarianceforecaster.current_value @ (self.covarianceforecaster.current_value.T @ tmp)
         # print(tmp2)
         self.market_vector.value = np.array(tmp2)
 
@@ -289,7 +289,7 @@ class TurnoverLimit(InequalityConstraint):
 
     def _compile_constr_to_cvxpy(self, w_plus, z, w_plus_minus_w_bm):
         """Compile left hand side of the constraint expression."""
-        return .5 * cp.norm1(z[:-1])
+        return 0.5 * cp.norm1(z[:-1])
 
     def _rhs(self):
         """Compile right hand side of the constraint expression."""
@@ -309,8 +309,7 @@ class ParticipationRateLimit(InequalityConstraint):
 
     def __init__(self, volumes, max_fraction_of_volumes=0.05):
         self.volumes = DataEstimator(volumes, compile_parameter=True)
-        self.max_participation_rate = DataEstimator(
-            max_fraction_of_volumes, compile_parameter=True)
+        self.max_participation_rate = DataEstimator(max_fraction_of_volumes, compile_parameter=True)
         self.portfolio_value = cp.Parameter(nonneg=True)
 
     def values_in_time(self, current_portfolio_value, **kwargs):
@@ -329,8 +328,7 @@ class ParticipationRateLimit(InequalityConstraint):
 
     def _rhs(self):
         """Compile right hand side of the constraint expression."""
-        return cp.multiply(self.volumes.parameter,
-                           self.max_participation_rate.parameter)
+        return cp.multiply(self.volumes.parameter, self.max_participation_rate.parameter)
 
 
 class LongOnly(InequalityConstraint):
@@ -391,8 +389,7 @@ class NoTrade(Constraint):
         :param trading_calendar: Future (including current) trading calendar.
         :type trading_calendar: pandas.DatetimeIndex
         """
-        self._index = (universe.get_loc if hasattr(
-            universe, 'get_loc') else universe.index)(self.asset)
+        self._index = (universe.get_loc if hasattr(universe, "get_loc") else universe.index)(self.asset)
         self._low = cp.Parameter()
         self._high = cp.Parameter()
 
@@ -405,11 +402,11 @@ class NoTrade(Constraint):
         :type kwargs: dict
         """
         if t in self.periods:
-            self._low.value = 0.
-            self._high.value = 0.
+            self._low.value = 0.0
+            self._high.value = 0.0
         else:
-            self._low.value = -100.
-            self._high.value = +100.
+            self._low.value = -100.0
+            self._high.value = +100.0
 
     def compile_to_cvxpy(self, w_plus, z, w_plus_minus_w_bm):
         """Compile constraint to cvxpy, return list of two.
@@ -423,8 +420,7 @@ class NoTrade(Constraint):
         :returns: Two constraints.
         :rtype: list of cvxpy.constraints
         """
-        return [z[self._index] >= self._low,
-                z[self._index] <= self._high]
+        return [z[self._index] >= self._low, z[self._index] <= self._high]
 
 
 class LeverageLimit(InequalityConstraint):
@@ -487,7 +483,7 @@ class MinCashBalance(InequalityConstraint):
         :param kwargs: Unused arguments passed to :meth:`values_in_time`.
         :type kwargs: dict
         """
-        self.rhs.value = self.c_min.current_value/current_portfolio_value
+        self.rhs.value = self.c_min.current_value / current_portfolio_value
 
     def _compile_constr_to_cvxpy(self, w_plus, z, w_plus_minus_w_bm):
         """Compile left hand side of the constraint expression."""
@@ -513,7 +509,7 @@ class LongCash(MinCashBalance):
     """
 
     def __init__(self):
-        super().__init__(0.)
+        super().__init__(0.0)
 
 
 class DollarNeutral(EqualityConstraint):
@@ -631,7 +627,7 @@ class MinMaxWeightsAtTimes(Estimator):
     :type times: iterable of pandas.Timestamp
     """
 
-    sign = 0 # should be 1 or -1
+    sign = 0  # should be 1 or -1
 
     def __init__(self, limit, times):
         self.base_limit = limit
@@ -664,8 +660,7 @@ class MinMaxWeightsAtTimes(Estimator):
 
         tidx = self.trading_calendar.get_loc(t)
         nowtidx = tidx + mpo_step
-        if (nowtidx < len(self.trading_calendar)) and\
-                (self.trading_calendar[nowtidx] in self.times):
+        if (nowtidx < len(self.trading_calendar)) and (self.trading_calendar[nowtidx] in self.times):
             self.limit.value = self.base_limit
         else:
             self.limit.value = 100 * self.sign
@@ -684,7 +679,7 @@ class MinWeightsAtTimes(MinMaxWeightsAtTimes, InequalityConstraint):
     :type times: iterable of pandas.Timestamp
     """
 
-    sign = -1.  # used in values_in_time of parent class
+    sign = -1.0  # used in values_in_time of parent class
 
     def _compile_constr_to_cvxpy(self, w_plus, z, w_plus_minus_w_bm):
         """Compile left hand side of the constraint expression."""
@@ -707,7 +702,8 @@ class MaxWeightsAtTimes(MinMaxWeightsAtTimes, InequalityConstraint):
     :param times: Times at which the constraint is active.
     :type times: iterable of pandas.Timestamp
     """
-    sign = 1.  # used in values_in_time of parent class
+
+    sign = 1.0  # used in values_in_time of parent class
 
     def _compile_constr_to_cvxpy(self, w_plus, z, w_plus_minus_w_bm):
         """Compile left hand side of the constraint expression."""
@@ -758,10 +754,8 @@ class FactorMaxLimit(InequalityConstraint):
     """
 
     def __init__(self, factor_exposure, limit):
-        self.factor_exposure = DataEstimator(
-            factor_exposure, compile_parameter=True)
-        self.limit = DataEstimator(limit, compile_parameter=True,
-            ignore_shape_check=True)
+        self.factor_exposure = DataEstimator(factor_exposure, compile_parameter=True)
+        self.limit = DataEstimator(limit, compile_parameter=True, ignore_shape_check=True)
 
     def _compile_constr_to_cvxpy(self, w_plus, z, w_plus_minus_w_bm):
         """Compile left hand side of the constraint expression."""
@@ -812,10 +806,8 @@ class FactorMinLimit(InequalityConstraint):
     """
 
     def __init__(self, factor_exposure, limit):
-        self.factor_exposure = DataEstimator(
-            factor_exposure, compile_parameter=True)
-        self.limit = DataEstimator(limit, compile_parameter=True,
-            ignore_shape_check=True)
+        self.factor_exposure = DataEstimator(factor_exposure, compile_parameter=True)
+        self.limit = DataEstimator(limit, compile_parameter=True, ignore_shape_check=True)
 
     def _compile_constr_to_cvxpy(self, w_plus, z, w_plus_minus_w_bm):
         """Compile left hand side of the constraint expression."""
@@ -867,10 +859,8 @@ class FactorGrossLimit(InequalityConstraint):
     """
 
     def __init__(self, factor_exposure, limit):
-        self.factor_exposure = DataEstimator(
-            factor_exposure, non_negative=True, compile_parameter=True)
-        self.limit = DataEstimator(limit, compile_parameter=True,
-            ignore_shape_check=True)
+        self.factor_exposure = DataEstimator(factor_exposure, non_negative=True, compile_parameter=True)
+        self.limit = DataEstimator(limit, compile_parameter=True, ignore_shape_check=True)
 
     def _compile_constr_to_cvxpy(self, w_plus, z, w_plus_minus_w_bm):
         """Compile left hand side of the constraint expression."""
@@ -925,8 +915,7 @@ class FixedFactorLoading(EqualityConstraint):
     """
 
     def __init__(self, factor_exposure, target):
-        self.factor_exposure = DataEstimator(
-            factor_exposure, compile_parameter=True)
+        self.factor_exposure = DataEstimator(factor_exposure, compile_parameter=True)
         self.target = DataEstimator(target, compile_parameter=True)
 
     def _compile_constr_to_cvxpy(self, w_plus, z, w_plus_minus_w_bm):
@@ -936,6 +925,7 @@ class FixedFactorLoading(EqualityConstraint):
     def _rhs(self):
         """Compile right hand side of the constraint expression."""
         return self.target.parameter
+
 
 class FactorNeutral(FixedFactorLoading):
     r"""Require neutrality with respect to certain risk factors.
@@ -974,4 +964,75 @@ class FactorNeutral(FixedFactorLoading):
     """
 
     def __init__(self, factor_exposure):
-        super().__init__(factor_exposure=factor_exposure, target=0.)
+        super().__init__(factor_exposure=factor_exposure, target=0.0)
+
+
+class FullSigmaLimit(InequalityConstraint):
+    r"""A limit on the portfolio-wide risk.
+
+    This is developed at page 35 of
+    `the book <https://stanford.edu/~boyd/papers/pdf/cvx_portfolio.pdf>`_.
+    This models the term
+
+    .. math::
+
+        {(w_t^+)}^T \Sigma_t {(w_t^+)} \leq l_t
+
+    where :math:`\Sigma_t` is the covariance matrix at time :math:`t`.
+
+    :param limit: Limit on the portfolio risk, either constant or varying
+        in time. If varying in time it is expressed as a :class:`pd.Series` with datetime index.
+    :type limit: float or pd.Series
+    """
+
+    def __init__(self, Sigma=HistoricalFactorizedCovariance, limit=1.0):
+        if isinstance(Sigma, type):
+            Sigma = Sigma()
+
+        self._alreadyfactorized = hasattr(Sigma, "FACTORIZED") and Sigma.FACTORIZED
+
+        self.Sigma = DataEstimator(Sigma)  # TBD if need to be computed as parameter
+        self._sigma_sqrt = None
+        self.limit = DataEstimator(limit, compile_parameter=True, ignore_shape_check=True)
+
+    def initialize_estimator(self, universe, trading_calendar):
+        """Initialize risk model with universe and trading times.
+
+        :param universe: Trading universe, including cash.
+        :type universe: pandas.Index
+        :param trading_calendar: Future (including current) trading calendar.
+        :type trading_calendar: pandas.DatetimeIndex
+        """
+        self._sigma_sqrt = cp.Parameter((len(universe) - 1, len(universe) - 1))
+
+    def values_in_time(self, **kwargs):
+        """Update parameters of risk model.
+
+        :param kwargs: All parameters to :meth:`values_in_time`.
+        :type kwargs: dict
+        """
+        if self._alreadyfactorized:
+            self._sigma_sqrt.value = self.Sigma.current_value
+        else:
+            self._sigma_sqrt.value = project_on_psd_cone_and_factorize(self.Sigma.current_value)
+
+    def _compile_constr_to_cvxpy(self, w_plus, z, w_plus_minus_w_bm):
+        """Compile risk term to cvxpy expression.
+
+        :param w_plus: Post-trade weights.
+        :type w_plus: cvxpy.Variable
+        :param z: Trade weights.
+        :type z: cvxpy.Variable
+        :param w_plus_minus_w_bm: Post-trade weights minus benchmark
+            weights.
+        :type w_plus_minus_w_bm: cvxpy.Variable
+
+        :returns: Cvxpy expression representing the risk model.
+        :rtype: cvxpy.expression
+        """
+        self.cvxpy_expression = cp.sum_squares(self._sigma_sqrt.T @ w_plus_minus_w_bm[:-1])
+        return self.cvxpy_expression
+
+    def _rhs(self):
+        """Compile right hand side of the constraint expression."""
+        return self.limit.parameter
