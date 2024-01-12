@@ -1010,7 +1010,6 @@ class MarketDataInMemory(MarketData):
         if not interval in self.sampling_intervals:
             raise SyntaxError("Unsopported trading interval for down-sampling.")
         interval = self.sampling_intervals[interval]
-        cash_test = self.returns.loc["2020-01-01":, "USDOLLAR"]
         new_returns_index = (
             pd.Series(self.returns.index, self.returns.index)
             .resample(interval, closed="left", label="left")
@@ -1023,9 +1022,6 @@ class MarketDataInMemory(MarketData):
             np.exp(np.log(1 + self.returns).resample(interval, closed="left", label="left").sum(min_count=1)) - 1
         )
         self.returns.index = new_returns_index
-
-        cash_test_ret = ((cash_test.loc["2020-01-02":"2020-04-01"] + 1).cumprod() - 1)[-1]
-        cash_test_2 = self.returns.loc["2020-01-01":"2020-08-01", "USDOLLAR"]
 
         # last row is always unknown
         self.returns.iloc[-1] = np.nan
