@@ -616,13 +616,13 @@ class MultiPeriodOptimization(Policy):
                     objective._copy_keeping_multipliers()
                     if hasattr(objective, "_copy_keeping_multipliers")
                     else copy.deepcopy(objective)
-                    for i in range(planning_horizon)
+                    for _ in range(planning_horizon)
                 ]
                 if planning_horizon > 1
                 else [objective]
             )
             self.constraints = (
-                [copy.deepcopy(constraints) for i in range(planning_horizon)]
+                [copy.deepcopy(constraints) for _ in range(planning_horizon)]
                 if planning_horizon > 1
                 else [constraints]
             )

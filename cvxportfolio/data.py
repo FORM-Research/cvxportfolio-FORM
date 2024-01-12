@@ -34,13 +34,12 @@ import requests
 import requests.exceptions
 
 from .errors import DataError
-from .utils import (hash_, periods_per_year_from_datetime_index,
-                    resample_returns)
+from .utils import hash_, periods_per_year_from_datetime_index, resample_returns
 
-__all__ = ["YahooFinance", "Fred",
-           "UserProvidedMarketData", "DownloadedMarketData"]
+__all__ = ["YahooFinance", "Fred", "UserProvidedMarketData", "DownloadedMarketData"]
 
 BASE_LOCATION = Path.home() / "cvxportfolio_data"
+
 
 def now_timezoned():
     """Return current timestamp with local timezone.
@@ -48,8 +47,8 @@ def now_timezoned():
     :returns: Current timestamp with local timezone.
     :rtype: pandas.Timestamp
     """
-    return pd.Timestamp(
-        datetime.datetime.now(datetime.timezone.utc).astimezone())
+    return pd.Timestamp(datetime.datetime.now(datetime.timezone.utc).astimezone())
+
 
 class SymbolData:
     """Base class for a single symbol time series data.
@@ -91,10 +90,7 @@ class SymbolData:
     :attribute data: The downloaded data for the symbol.
     """
 
-    def __init__(self, symbol,
-                 storage_backend='pickle',
-                 base_location=BASE_LOCATION,
-                 grace_period=pd.Timedelta('1d')):
+    def __init__(self, symbol, storage_backend="pickle", base_location=BASE_LOCATION, grace_period=pd.Timedelta("1d")):
         self._symbol = symbol
         self._storage_backend = storage_backend
         self._base_location = base_location
@@ -130,12 +126,13 @@ class SymbolData:
     def _load_raw(self):
         """Load raw data from database."""
         # we could implement multiprocess safety here
-        loader = globals()['_loader_' + self._storage_backend]
+        loader = globals()["_loader_" + self._storage_backend]
         try:
             logging.info(
                 f"{self.__class__.__name__} is trying to load {self.symbol}"
                 + f" with {self._storage_backend} backend"
-                + f" from {self.storage_location}")
+                + f" from {self.storage_location}"
+            )
             return loader(self.symbol, self.storage_location)
         except FileNotFoundError:
             return None
@@ -155,11 +152,12 @@ class SymbolData:
         :type data: pandas.Series or pandas.DataFrame
         """
         # we could implement multiprocess safety here
-        storer = globals()['_storer_' + self._storage_backend]
+        storer = globals()["_storer_" + self._storage_backend]
         logging.info(
             f"{self.__class__.__name__} is storing {self.symbol}"
             + f" with {self._storage_backend} backend"
-            + f" in {self.storage_location}")
+            + f" in {self.storage_location}"
+        )
         storer(self.symbol, data, self.storage_location)
 
     def _print_difference(self, current, new):
@@ -168,7 +166,7 @@ class SymbolData:
         This is temporary and will be re-factored.
         """
         print("TEMPORARY: Diff between overlap of downloaded and stored")
-        print((new - current).dropna(how='all').tail(5))
+        print((new - current).dropna(how="all").tail(5))
 
     def update(self, grace_period):
         """Update current stored data for symbol.
@@ -178,48 +176,47 @@ class SymbolData:
         :type grace_period: pandas.Timedelta
         """
         current = self._load_raw()
-        logging.info(
-            f"Downloading {self.symbol}"
-            + f" from {self.__class__.__name__}")
-        updated = self._download(
-            self.symbol, current, grace_period=grace_period)
+        logging.info(f"Downloading {self.symbol}" + f" from {self.__class__.__name__}")
+        updated = self._download(self.symbol, current, grace_period=grace_period)
 
         if np.any(updated.iloc[:-1].isnull()):
             logging.warning(
-              " cvxportfolio.%s('%s').data contains NaNs."
-              + " You may want to inspect it. If you want, you can delete the"
-              + " data file in %s to force re-download from the start.",
-              self.__class__.__name__, self.symbol, self.storage_location)
+                " cvxportfolio.%s('%s').data contains NaNs."
+                + " You may want to inspect it. If you want, you can delete the"
+                + " data file in %s to force re-download from the start.",
+                self.__class__.__name__,
+                self.symbol,
+                self.storage_location,
+            )
 
         try:
             if current is not None:
                 if not np.all(
-                        # we use numpy.isclose because returns may be computed
-                        # via logreturns and numerical errors can sift through
-                        np.isclose(updated.loc[current.index[:-1]],
-                            current.iloc[:-1], equal_nan=True,
-                            rtol=1e-08, atol=1e-08)):
-                    logging.error(f"{self.__class__.__name__} update"
-                        + f" of {self.symbol} is not append-only!")
+                    # we use numpy.isclose because returns may be computed
+                    # via logreturns and numerical errors can sift through
+                    np.isclose(
+                        updated.loc[current.index[:-1]], current.iloc[:-1], equal_nan=True, rtol=1e-08, atol=1e-08
+                    )
+                ):
+                    logging.error(f"{self.__class__.__name__} update" + f" of {self.symbol} is not append-only!")
                     self._print_difference(current, updated)
-                if hasattr(current, 'columns'):
+                if hasattr(current, "columns"):
                     # the first column is open price
-                    if not current.iloc[-1, 0] == updated.loc[
-                            current.index[-1]].iloc[0]:
+                    if not current.iloc[-1, 0] == updated.loc[current.index[-1]].iloc[0]:
                         logging.error(
-                            f"{self.__class__.__name__} update "
-                            + f" of {self.symbol} changed last open price!")
+                            f"{self.__class__.__name__} update " + f" of {self.symbol} changed last open price!"
+                        )
                         self._print_difference(current, updated)
                 else:
                     if not current.iloc[-1] == updated.loc[current.index[-1]]:
-                        logging.error(
-                            f"{self.__class__.__name__} update"
-                            + f" of {self.symbol} changed last value!")
+                        logging.error(f"{self.__class__.__name__} update" + f" of {self.symbol} changed last value!")
                         self._print_difference(current, updated)
         except KeyError:
-            logging.error("%s update of %s could not be checked for"
-                + " append-only edits. Was there a DST change?",
-                self.__class__.__name__, self.symbol)
+            logging.error(
+                "%s update of %s could not be checked for" + " append-only edits. Was there a DST change?",
+                self.__class__.__name__,
+                self.symbol,
+            )
         self._store(updated)
 
     def _download(self, symbol, current, grace_period, **kwargs):
@@ -234,7 +231,7 @@ class SymbolData:
         :type current: pandas.Series or pandas.DataFrame or None
         :rtype: pandas.Series or pandas.DataFrame
         """
-        raise NotImplementedError #pragma: no cover
+        raise NotImplementedError  # pragma: no cover
 
     def _preload(self, data):
         """Prepare data to serve to the user.
@@ -252,9 +249,10 @@ class SymbolData:
 # Yahoo Finance.
 #
 
+
 def _timestamp_convert(unix_seconds_ts):
     """Convert a UNIX timestamp in seconds to a pandas.Timestamp."""
-    return pd.Timestamp(unix_seconds_ts*1E9, tz='UTC')
+    return pd.Timestamp(unix_seconds_ts * 1e9, tz="UTC")
 
 
 class YahooFinance(SymbolData):
@@ -287,29 +285,26 @@ class YahooFinance(SymbolData):
         # print(data.isnull().sum())
 
         # nan-out nonpositive prices
-        data.loc[data["open"] <= 0, 'open'] = np.nan
+        data.loc[data["open"] <= 0, "open"] = np.nan
         data.loc[data["close"] <= 0, "close"] = np.nan
         data.loc[data["high"] <= 0, "high"] = np.nan
         data.loc[data["low"] <= 0, "low"] = np.nan
         data.loc[data["adjclose"] <= 0, "adjclose"] = np.nan
 
         # nan-out negative volumes
-        data.loc[data["volume"] < 0, 'volume'] = np.nan
+        data.loc[data["volume"] < 0, "volume"] = np.nan
 
         # all infinity values are nans
-        data.iloc[:, :] = np.nan_to_num(
-            data.values, copy=True, nan=np.nan, posinf=np.nan, neginf=np.nan)
+        data.iloc[:, :] = np.nan_to_num(data.values, copy=True, nan=np.nan, posinf=np.nan, neginf=np.nan)
 
         # print(data)
         # print(data.isnull().sum())
 
         # if low is not the lowest, set it to nan
-        data['low'].loc[
-            data['low'] > data[['open', 'high', 'close']].min(1)] = np.nan
+        data["low"].loc[data["low"] > data[["open", "high", "close"]].min(1)] = np.nan
 
         # if high is not the highest, set it to nan
-        data['high'].loc[
-            data['high'] < data[['open', 'high', 'close']].max(1)] = np.nan
+        data["high"].loc[data["high"] < data[["open", "high", "close"]].max(1)] = np.nan
 
         # print(data)
         # print(data.isnull().sum())
@@ -319,31 +314,29 @@ class YahooFinance(SymbolData):
         #
 
         # fill volumes with zeros (safest choice)
-        data['volume'] = data['volume'].fillna(0.)
+        data["volume"] = data["volume"].fillna(0.0)
 
         # fill close price with open price
-        data['close'] = data['close'].fillna(data['open'])
+        data["close"] = data["close"].fillna(data["open"])
 
         # fill open price with close from day(s) before
         # repeat as long as it helps (up to 1 year)
         for shifter in range(252):
-            logging.info(
-                "Filling opens with close from %s days before", shifter)
-            orig_missing_opens = data['open'].isnull().sum()
-            data['open'] = data['open'].fillna(data['close'].shift(
-                shifter+1))
-            new_missing_opens = data['open'].isnull().sum()
+            logging.info("Filling opens with close from %s days before", shifter)
+            orig_missing_opens = data["open"].isnull().sum()
+            data["open"] = data["open"].fillna(data["close"].shift(shifter + 1))
+            new_missing_opens = data["open"].isnull().sum()
             if orig_missing_opens == new_missing_opens:
                 break
 
         # fill close price with same day's open
-        data['close'] = data['close'].fillna(data['open'])
+        data["close"] = data["close"].fillna(data["open"])
 
         # fill high price with max
-        data['high'] = data['high'].fillna(data[['open', 'close']].max(1))
+        data["high"] = data["high"].fillna(data[["open", "close"]].max(1))
 
         # fill low price with max
-        data['low'] = data['low'].fillna(data[['open', 'close']].min(1))
+        data["low"] = data["low"].fillna(data[["open", "close"]].min(1))
 
         # print(data)
         # print(data.isnull().sum())
@@ -353,7 +346,7 @@ class YahooFinance(SymbolData):
         #
 
         # compute log of ratio between adjclose and close
-        log_adjustment_ratio = np.log(data['adjclose'] / data['close'])
+        log_adjustment_ratio = np.log(data["adjclose"] / data["close"])
 
         # forward fill adjustment ratio
         log_adjustment_ratio = log_adjustment_ratio.ffill()
@@ -363,7 +356,7 @@ class YahooFinance(SymbolData):
 
         # full open-to-open returns
         open_to_open = np.log(data["open"]).diff().shift(-1)
-        data['return'] = np.exp(open_to_open + non_market_lr) - 1
+        data["return"] = np.exp(open_to_open + non_market_lr) - 1
 
         # print(data)
         # print(data.isnull().sum())
@@ -378,8 +371,7 @@ class YahooFinance(SymbolData):
         del data["adjclose"]
 
         # eliminate last period's intraday data
-        data.loc[data.index[-1],
-            ["high", "low", "close", "return", "volume"]] = np.nan
+        data.loc[data.index[-1], ["high", "low", "close", "return", "volume"]] = np.nan
 
         # print(data)
         # print(data.isnull().sum())
@@ -387,19 +379,20 @@ class YahooFinance(SymbolData):
         return data
 
     @staticmethod
-    def _get_data_yahoo(ticker, start='1900-01-01', end='2100-01-01'):
+    def _get_data_yahoo(ticker, start="1900-01-01", end="2100-01-01"):
         """Get 1 day OHLC from Yahoo finance.
 
         Result is timestamped with the open time (time-zoned) of the
         instrument.
         """
 
-        base_url = 'https://query2.finance.yahoo.com'
+        base_url = "https://query2.finance.yahoo.com"
 
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1)'
-            ' AppleWebKit/537.36 (KHTML, like Gecko)'
-            ' Chrome/39.0.2171.95 Safari/537.36'}
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1)"
+            " AppleWebKit/537.36 (KHTML, like Gecko)"
+            " Chrome/39.0.2171.95 Safari/537.36"
+        }
 
         # print(HEADERS)
         start = int(pd.Timestamp(start).timestamp())
@@ -408,40 +401,34 @@ class YahooFinance(SymbolData):
         try:
             res = requests.get(
                 url=f"{base_url}/v8/finance/chart/{ticker}",
-                params={'interval': '1d',
-                    "period1": start,
-                    "period2": end},
+                params={"interval": "1d", "period1": start, "period2": end},
                 headers=headers,
-                timeout=10) # seconds
+                timeout=10,
+            )  # seconds
         except requests.ConnectionError as exc:
             raise DataError(
-                f"Download of {ticker} from YahooFinance failed."
-                + " Are you connected to the Internet?") from exc
+                f"Download of {ticker} from YahooFinance failed." + " Are you connected to the Internet?"
+            ) from exc
 
         # print(res)
 
         if res.status_code == 404:
-            raise DataError(
-                f'Data for symbol {ticker} is not available.'
-                + 'Json output:', str(res.json()))
+            raise DataError(f"Data for symbol {ticker} is not available." + "Json output:", str(res.json()))
 
         if res.status_code != 200:
-            raise DataError(f'Yahoo finance download of {ticker} failed. Json:',
-                str(res.json())) # pragma: no cover
+            raise DataError(f"Yahoo finance download of {ticker} failed. Json:", str(res.json()))  # pragma: no cover
 
-        data = res.json()['chart']['result'][0]
+        data = res.json()["chart"]["result"][0]
 
         try:
-            index = pd.DatetimeIndex(
-                [_timestamp_convert(el) for el in data['timestamp']])
+            index = pd.DatetimeIndex([_timestamp_convert(el) for el in data["timestamp"]])
 
-            df_result = pd.DataFrame(
-                data['indicators']['quote'][0], index=index)
-            df_result['adjclose'] = data[
-                'indicators']['adjclose'][0]['adjclose']
+            df_result = pd.DataFrame(data["indicators"]["quote"][0], index=index)
+            df_result["adjclose"] = data["indicators"]["adjclose"][0]["adjclose"]
         except KeyError:
-            raise DataError(f'Yahoo finance download of {ticker} failed.'
-                + ' Json:', str(res.json())) # pragma: no cover
+            raise DataError(
+                f"Yahoo finance download of {ticker} failed." + " Json:", str(res.json())
+            )  # pragma: no cover
 
         # last timestamp is probably broken (not timed to market open)
         # we set its time to same as the day before, but this is wrong
@@ -449,16 +436,12 @@ class YahooFinance(SymbolData):
         # overwritten next update
         if df_result.index[-1].time() != df_result.index[-2].time():
             tm1 = df_result.index[-2].time()
-            newlast = df_result.index[-1].replace(
-                hour=tm1.hour, minute=tm1.minute, second=tm1.second)
-            df_result.index = pd.DatetimeIndex(
-                list(df_result.index[:-1]) + [newlast])
+            newlast = df_result.index[-1].replace(hour=tm1.hour, minute=tm1.minute, second=tm1.second)
+            df_result.index = pd.DatetimeIndex(list(df_result.index[:-1]) + [newlast])
 
-        return df_result[
-            ['open', 'low', 'high', 'close', 'adjclose', 'volume']]
+        return df_result[["open", "low", "high", "close", "adjclose", "volume"]]
 
-    def _download(self, symbol, current=None,
-                overlap=5, grace_period='5d', **kwargs):
+    def _download(self, symbol, current=None, overlap=5, grace_period="5d", **kwargs):
         """Download single stock from Yahoo Finance.
 
         If data was already downloaded we only download
@@ -477,20 +460,18 @@ class YahooFinance(SymbolData):
         """
         if overlap < 2:
             raise SyntaxError(
-                f'{self.__class__.__name__} with overlap smaller than 2'
-                + ' could have issues with DST.')
+                f"{self.__class__.__name__} with overlap smaller than 2" + " could have issues with DST."
+            )
         if (current is None) or (len(current) < overlap):
             updated = self._get_data_yahoo(symbol, **kwargs)
-            logging.info('Downloading from the start.')
+            logging.info("Downloading from the start.")
             result = self._clean(updated)
             # we remove first row if it contains NaNs
             if np.any(result.iloc[0].isnull()):
                 result = result.iloc[1:]
             return result
-        if (now_timezoned() - current.index[-1]
-                ) < pd.Timedelta(grace_period):
-            logging.info(
-                'Skipping download because stored data is recent enough.')
+        if (now_timezoned() - current.index[-1]) < pd.Timedelta(grace_period):
+            logging.info("Skipping download because stored data is recent enough.")
             return current
         new = self._get_data_yahoo(symbol, start=current.index[-overlap])
         new = self._clean(new)
@@ -508,9 +489,11 @@ class YahooFinance(SymbolData):
 
         return data
 
+
 #
 # Fred.
 #
+
 
 class Fred(SymbolData):
     """Fred single-symbol data.
@@ -541,16 +524,15 @@ class Fred(SymbolData):
 
     def _internal_download(self, symbol):
         try:
-            return pd.read_csv(
-                self.URL + f'?id={symbol}',
-                index_col=0, parse_dates=[0])[symbol]
+            return pd.read_csv(self.URL + f"?id={symbol}", index_col=0, parse_dates=[0])[symbol]
         except URLError as exc:
-            raise DataError(f"Download of {symbol}"
+            raise DataError(
+                f"Download of {symbol}"
                 + f" from {self.__class__.__name__} failed."
-                + " Are you connected to the Internet?") from exc
+                + " Are you connected to the Internet?"
+            ) from exc
 
-    def _download(
-        self, symbol="DFF", current=None, grace_period='5d', **kwargs):
+    def _download(self, symbol="DFF", current=None, grace_period="5d", **kwargs):
         """Download or update pandas Series from Fred.
 
         If already downloaded don't change data stored locally and only
@@ -562,17 +544,15 @@ class Fred(SymbolData):
         """
         if current is None:
             return self._internal_download(symbol)
-        if (pd.Timestamp.today() - current.index[-1]
-            ) < pd.Timedelta(grace_period):
-            logging.info(
-                'Skipping download because stored data is recent enough.')
+        if (pd.Timestamp.today() - current.index[-1]) < pd.Timedelta(grace_period):
+            logging.info("Skipping download because stored data is recent enough.")
             return current
 
         new = self._internal_download(symbol)
         new = new.loc[new.index > current.index[-1]]
 
         if new.empty:
-            logging.info('New downloaded data is empty!')
+            logging.info("New downloaded data is empty!")
             return current
 
         assert new.index[0] > current.index[-1]
@@ -580,18 +560,22 @@ class Fred(SymbolData):
 
     def _preload(self, data):
         """Add UTC timezone."""
-        data.index = data.index.tz_localize('UTC')
+        data.index = data.index.tz_localize("UTC")
         return data
+
 
 #
 # Sqlite storage backend.
 #
 
+
 def _open_sqlite(storage_location):
-    return sqlite3.connect(storage_location/"db.sqlite")
+    return sqlite3.connect(storage_location / "db.sqlite")
+
 
 def _close_sqlite(connection):
     connection.close()
+
 
 def _loader_sqlite(symbol, storage_location):
     """Load data in sqlite format.
@@ -605,16 +589,15 @@ def _loader_sqlite(symbol, storage_location):
     try:
         connection = _open_sqlite(storage_location)
         dtypes = pd.read_sql_query(
-            f"SELECT * FROM {symbol}___dtypes",
-            connection, index_col="index",
-            dtype={"index": "str", "0": "str"})
+            f"SELECT * FROM {symbol}___dtypes", connection, index_col="index", dtype={"index": "str", "0": "str"}
+        )
 
-        parse_dates = 'index'
+        parse_dates = "index"
         my_dtypes = dict(dtypes["0"])
 
         tmp = pd.read_sql_query(
-            f"SELECT * FROM {symbol}", connection,
-            index_col="index", parse_dates=parse_dates, dtype=my_dtypes)
+            f"SELECT * FROM {symbol}", connection, index_col="index", parse_dates=parse_dates, dtype=my_dtypes
+        )
 
         _close_sqlite(connection)
         multiindex = []
@@ -630,6 +613,7 @@ def _loader_sqlite(symbol, storage_location):
     except pd.errors.DatabaseError:
         return None
 
+
 def _storer_sqlite(symbol, data, storage_location):
     """Store data in sqlite format.
 
@@ -640,9 +624,7 @@ def _storer_sqlite(symbol, data, storage_location):
         the index) it must have explicit timezone.
     """
     connection = _open_sqlite(storage_location)
-    exists = pd.read_sql_query(
-      f"SELECT name FROM sqlite_master WHERE type='table' AND name='{symbol}'",
-      connection)
+    exists = pd.read_sql_query(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{symbol}'", connection)
 
     if len(exists):
         _ = connection.cursor().execute(f"DROP TABLE '{symbol}'")
@@ -650,21 +632,17 @@ def _storer_sqlite(symbol, data, storage_location):
         connection.commit()
 
     if hasattr(data.index, "levels"):
-        data.index = data.index.set_names(
-            ["index"] +
-            [f"___level{i}" for i in range(1, len(data.index.levels))]
-        )
+        data.index = data.index.set_names(["index"] + [f"___level{i}" for i in range(1, len(data.index.levels))])
         data = data.reset_index().set_index("index")
     else:
         data.index.name = "index"
 
     if data.index[0].tzinfo is None:
-        warnings.warn('Index has not timezone, setting to UTC')
-        data.index = data.index.tz_localize('UTC')
+        warnings.warn("Index has not timezone, setting to UTC")
+        data.index = data.index.tz_localize("UTC")
 
     data.to_sql(f"{symbol}", connection)
-    pd.DataFrame(data).dtypes.astype("string").to_sql(
-        f"{symbol}___dtypes", connection)
+    pd.DataFrame(data).dtypes.astype("string").to_sql(f"{symbol}___dtypes", connection)
     _close_sqlite(connection)
 
 
@@ -672,33 +650,33 @@ def _storer_sqlite(symbol, data, storage_location):
 # Pickle storage backend.
 #
 
+
 def _loader_pickle(symbol, storage_location):
     """Load data in pickle format."""
     return pd.read_pickle(storage_location / f"{symbol}.pickle")
+
 
 def _storer_pickle(symbol, data, storage_location):
     """Store data in pickle format."""
     data.to_pickle(storage_location / f"{symbol}.pickle")
 
+
 #
 # Csv storage backend.
 #
 
+
 def _loader_csv(symbol, storage_location):
     """Load data in csv format."""
 
-    index_dtypes = pd.read_csv(
-        storage_location / f"{symbol}___index_dtypes.csv",
-        index_col=0)["0"]
+    index_dtypes = pd.read_csv(storage_location / f"{symbol}___index_dtypes.csv", index_col=0)["0"]
 
-    dtypes = pd.read_csv(
-        storage_location / f"{symbol}___dtypes.csv", index_col=0,
-        dtype={"index": "str", "0": "str"})
+    dtypes = pd.read_csv(storage_location / f"{symbol}___dtypes.csv", index_col=0, dtype={"index": "str", "0": "str"})
     dtypes = dict(dtypes["0"])
     new_dtypes = {}
     parse_dates = []
     for i, level in enumerate(index_dtypes):
-        if "datetime64[ns" in level: # includes all timezones
+        if "datetime64[ns" in level:  # includes all timezones
             parse_dates.append(i)
     for i, el in enumerate(dtypes):
         if "datetime64[ns" in dtypes[el]:  # includes all timezones
@@ -706,25 +684,29 @@ def _loader_csv(symbol, storage_location):
         else:
             new_dtypes[el] = dtypes[el]
 
-    tmp = pd.read_csv(storage_location / f"{symbol}.csv",
+    tmp = pd.read_csv(
+        storage_location / f"{symbol}.csv",
         index_col=list(range(len(index_dtypes))),
-        parse_dates=parse_dates, dtype=new_dtypes)
+        parse_dates=parse_dates,
+        dtype=new_dtypes,
+    )
 
     return tmp.iloc[:, 0] if tmp.shape[1] == 1 else tmp
 
 
 def _storer_csv(symbol, data, storage_location):
     """Store data in csv format."""
-    pd.DataFrame(data.index.dtypes if hasattr(data.index, 'levels')
-        else [data.index.dtype]).astype("string").to_csv(
-        storage_location / f"{symbol}___index_dtypes.csv")
-    pd.DataFrame(data).dtypes.astype("string").to_csv(
-        storage_location / f"{symbol}___dtypes.csv")
+    pd.DataFrame(data.index.dtypes if hasattr(data.index, "levels") else [data.index.dtype]).astype("string").to_csv(
+        storage_location / f"{symbol}___index_dtypes.csv"
+    )
+    pd.DataFrame(data).dtypes.astype("string").to_csv(storage_location / f"{symbol}___dtypes.csv")
     data.to_csv(storage_location / f"{symbol}.csv")
+
 
 #
 # Market Data
 #
+
 
 class MarketData:
     """Prepare, hold, and serve market data.
@@ -744,11 +726,10 @@ class MarketData:
         :rtype: (pandas.DataFrame, pandas.Series, pandas.DataFrame,
             pandas.Series, pandas.Series)
         """
-        raise NotImplementedError # pragma: no cover
+        raise NotImplementedError  # pragma: no cover
 
     # pylint: disable=redundant-returns-doc
-    def trading_calendar(
-        self, start_time=None, end_time=None, include_end=True):
+    def trading_calendar(self, start_time=None, end_time=None, include_end=True):
         """Get trading calendar between times.
 
         :param start_time: Initial time of the trading calendar. Always
@@ -763,7 +744,7 @@ class MarketData:
         :returns: Trading calendar.
         :rtype: pandas.DatetimeIndex
         """
-        raise NotImplementedError # pragma: no cover
+        raise NotImplementedError  # pragma: no cover
 
     @property
     def periods_per_year(self):
@@ -771,16 +752,16 @@ class MarketData:
 
         :rtype: int
         """
-        raise NotImplementedError # pragma: no cover
+        raise NotImplementedError  # pragma: no cover
 
     @property
-    def full_universe(self): # pylint: disable=redundant-returns-doc
+    def full_universe(self):  # pylint: disable=redundant-returns-doc
         """Full universe, which might not be available for trading.
 
         :returns: Full universe.
         :rtype: pandas.Index
         """
-        raise NotImplementedError # pragma: no cover
+        raise NotImplementedError  # pragma: no cover
 
     # pylint: disable=unused-argument, redundant-returns-doc
     def partial_universe_signature(self, partial_universe):
@@ -801,19 +782,18 @@ class MarketData:
         """
         return None
 
+
 class MarketDataInMemory(MarketData):
     """Market data that is stored in memory when initialized."""
 
     # this is overwritten in the derived classes' initializers
     returns = None
 
-    def __init__(
-        self, trading_frequency, base_location, cash_key, min_history):
+    def __init__(self, trading_frequency, base_location, cash_key, min_history):
         """This must be called by the derived classes."""
         if (self.returns.index[-1] - self.returns.index[0]) < min_history:
-            raise DataError(
-                "The provided returns have less history "
-                + f"than the min_history {min_history}")
+            raise DataError("The provided returns have less history " + f"than the min_history {min_history}")
+        self.original_returns = self.returns.copy()
         if trading_frequency:
             self._downsample(trading_frequency)
         self.trading_frequency = trading_frequency
@@ -831,13 +811,11 @@ class MarketDataInMemory(MarketData):
     def _mask_dataframes(self, mask):
         """Mask internal dataframes if necessary."""
         if (self._mask is None) or not np.all(self._mask == mask):
-            logging.info("Masking internal %s dataframes.",
-                self.__class__.__name__)
+            logging.info("Masking internal %s dataframes.", self.__class__.__name__)
             colmask = self.returns.columns[mask]
             # self._masked_returns = self._df_or_ser_set_read_only(
             #     pd.DataFrame(self.returns.iloc[:, mask], copy=True))
-            self._masked_returns = self._df_or_ser_set_read_only(
-               pd.DataFrame(self.returns.loc[:, colmask], copy=True))
+            self._masked_returns = self._df_or_ser_set_read_only(pd.DataFrame(self.returns.loc[:, colmask], copy=True))
             # self._masked_returns = self._df_or_ser_set_read_only(
             #     pd.DataFrame(np.array(self.returns.values[:, mask]),
             #         index=self.returns.index, columns=colmask))
@@ -845,7 +823,8 @@ class MarketDataInMemory(MarketData):
                 # self._masked_volumes = self._df_or_ser_set_read_only(
                 #     pd.DataFrame(self.volumes.iloc[:, mask[:-1]], copy=True))
                 self._masked_volumes = self._df_or_ser_set_read_only(
-                    pd.DataFrame(self.volumes.loc[:, colmask[:-1]], copy=True))
+                    pd.DataFrame(self.volumes.loc[:, colmask[:-1]], copy=True)
+                )
                 # self._masked_volumes = self._df_or_ser_set_read_only(
                 #     pd.DataFrame(np.array(self.volumes.values[:, mask[:-1]]),
                 #         index=self.volumes.index, columns=colmask[:-1]))
@@ -853,7 +832,8 @@ class MarketDataInMemory(MarketData):
                 # self._masked_prices = self._df_or_ser_set_read_only(
                 #     pd.DataFrame(self.prices.iloc[:, mask[:-1]], copy=True))
                 self._masked_prices = self._df_or_ser_set_read_only(
-                    pd.DataFrame(self.prices.loc[:, colmask[:-1]], copy=True))
+                    pd.DataFrame(self.prices.loc[:, colmask[:-1]], copy=True)
+                )
             self._mask = mask
 
     @property
@@ -881,30 +861,24 @@ class MarketDataInMemory(MarketData):
         self._mask_dataframes(mask)
 
         tidx = self.returns.index.get_loc(t)
-        past_returns = self._df_or_ser_set_read_only(
-            pd.DataFrame(self._masked_returns.iloc[:tidx]))
-        current_returns = self._df_or_ser_set_read_only(
-            pd.Series(self._masked_returns.iloc[tidx]))
+        past_returns = self._df_or_ser_set_read_only(pd.DataFrame(self._masked_returns.iloc[:tidx]))
+        current_returns = self._df_or_ser_set_read_only(pd.Series(self._masked_returns.iloc[tidx]))
 
         if not self.volumes is None:
             tidx = self.volumes.index.get_loc(t)
-            past_volumes = self._df_or_ser_set_read_only(
-                pd.DataFrame(self._masked_volumes.iloc[:tidx]))
-            current_volumes = self._df_or_ser_set_read_only(
-                pd.Series(self._masked_volumes.iloc[tidx]))
+            past_volumes = self._df_or_ser_set_read_only(pd.DataFrame(self._masked_volumes.iloc[:tidx]))
+            current_volumes = self._df_or_ser_set_read_only(pd.Series(self._masked_volumes.iloc[tidx]))
         else:
             past_volumes = None
             current_volumes = None
 
         if not self.prices is None:
             tidx = self.prices.index.get_loc(t)
-            current_prices = self._df_or_ser_set_read_only(
-                pd.Series(self._masked_prices.iloc[tidx]))
+            current_prices = self._df_or_ser_set_read_only(pd.Series(self._masked_prices.iloc[tidx]))
         else:
             current_prices = None
 
-        return (past_returns, current_returns, past_volumes, current_volumes,
-                current_prices)
+        return (past_returns, current_returns, past_volumes, current_volumes, current_prices)
 
     def _add_cash_column(self, cash_key, grace_period):
         """Add the cash column to an already formed returns dataframe.
@@ -915,13 +889,12 @@ class MarketDataInMemory(MarketData):
         objective term.
         """
 
-        if not cash_key == 'USDOLLAR':
-            raise NotImplementedError(
-                'Currently the only data pipeline built is for USDOLLAR cash')
+        if not cash_key == "USDOLLAR":
+            raise NotImplementedError("Currently the only data pipeline built is for USDOLLAR cash")
 
         if self.returns.index.tz is None:
             raise DataError(
-                'Your provided dataframes are not timezone aware.'
+                "Your provided dataframes are not timezone aware."
                 + " This is not recommended, and doesn't allow to add the cash"
                 + " returns' column internally."
                 + " You can fix this by adding a timezone manually "
@@ -930,12 +903,11 @@ class MarketDataInMemory(MarketData):
                 + " the cash returns' column as the last column of the returns"
                 + " dataframe (so it has one more column than volumes and"
                 + " prices, if provided), and set the cash_key parameter to"
-                + " its name.")
+                + " its name."
+            )
 
-        data = Fred(
-            'DFF', base_location=self.base_location, grace_period=grace_period)
-        cash_returns_per_period = resample_returns(
-            data.data/100, periods=self.periods_per_year)
+        data = Fred("DFF", base_location=self.base_location, grace_period=grace_period)
+        cash_returns_per_period = resample_returns(data.data / 100, periods=self.periods_per_year)
 
         # we merge instead of assigning column because indexes might
         # be misaligned (e.g., with tz-aware timestamps)
@@ -945,8 +917,7 @@ class MarketDataInMemory(MarketData):
         tmp[cash_key] = tmp[cash_key].ffill()
         self.returns = tmp.loc[original_returns_index]
 
-    def trading_calendar(
-        self, start_time=None, end_time=None, include_end=True):
+    def trading_calendar(self, start_time=None, end_time=None, include_end=True):
         """Get trading calendar from market data.
 
         :param start_time: Initial time of the trading calendar. Always
@@ -974,13 +945,13 @@ class MarketDataInMemory(MarketData):
     def _universe_mask_at_time(self, t):
         """Return the valid universe mask at time t."""
         past_returns = self.returns.loc[self.returns.index < t]
-        valid_universe_mask = ((past_returns.count() >= self.min_history) &
-            (~self.returns.loc[t].isnull()))
+        valid_universe_mask = (past_returns.count() >= self.min_history) & (~self.returns.loc[t].isnull())
         if sum(valid_universe_mask) <= 1:
             raise DataError(
-                f'The trading universe at time {t} has size less or equal'
-                + ' than one, i.e., only the cash account. There are probably '
-                + ' issues with missing data in the provided market returns.')
+                f"The trading universe at time {t} has size less or equal"
+                + " than one, i.e., only the cash account. There are probably "
+                + " issues with missing data in the provided market returns."
+            )
         return valid_universe_mask
 
     @staticmethod
@@ -1000,9 +971,8 @@ class MarketDataInMemory(MarketData):
         """
         data = df_or_ser.values
         data.flags.writeable = False
-        if hasattr(df_or_ser, 'columns'):
-            return pd.DataFrame(data, index=df_or_ser.index,
-                                columns=df_or_ser.columns)
+        if hasattr(df_or_ser, "columns"):
+            return pd.DataFrame(data, index=df_or_ser.index, columns=df_or_ser.columns)
         return pd.Series(data, index=df_or_ser.index, name=df_or_ser.name)
 
     def _set_read_only(self):
@@ -1019,11 +989,9 @@ class MarketDataInMemory(MarketData):
     @property
     def _earliest_backtest_start(self):
         """Earliest date at which we can start a backtest."""
-        return self.returns.iloc[:, :-1].dropna(how='all').index[
-            self.min_history]
+        return self.returns.iloc[:, :-1].dropna(how="all").index[self.min_history]
 
-    sampling_intervals = {
-        'weekly': 'W-MON', 'monthly': 'MS', 'quarterly': 'QS', 'annual': 'AS'}
+    sampling_intervals = {"weekly": "W-MON", "monthly": "MS", "quarterly": "QS", "annual": "AS"}
 
     # @staticmethod
     # def _is_first_interval_small(datetimeindex):
@@ -1040,17 +1008,24 @@ class MarketDataInMemory(MarketData):
     def _downsample(self, interval):
         """_downsample market data."""
         if not interval in self.sampling_intervals:
-            raise SyntaxError(
-                'Unsopported trading interval for down-sampling.')
+            raise SyntaxError("Unsopported trading interval for down-sampling.")
         interval = self.sampling_intervals[interval]
-        new_returns_index = pd.Series(self.returns.index, self.returns.index
-                                      ).resample(interval, closed='left',
-                                                 label='left').first().values
+        cash_test = self.returns.loc["2020-01-01":, "USDOLLAR"]
+        new_returns_index = (
+            pd.Series(self.returns.index, self.returns.index)
+            .resample(interval, closed="left", label="left")
+            .first()
+            .values
+        )
+
         # print(new_returns_index)
-        self.returns = np.exp(np.log(
-            1+self.returns).resample(interval, closed='left', label='left'
-                                     ).sum(min_count=1))-1
+        self.returns = (
+            np.exp(np.log(1 + self.returns).resample(interval, closed="left", label="left").sum(min_count=1)) - 1
+        )
         self.returns.index = new_returns_index
+
+        cash_test_ret = ((cash_test.loc["2020-01-02":"2020-04-01"] + 1).cumprod() - 1)[-1]
+        cash_test_2 = self.returns.loc["2020-01-01":"2020-08-01", "USDOLLAR"]
 
         # last row is always unknown
         self.returns.iloc[-1] = np.nan
@@ -1061,20 +1036,19 @@ class MarketDataInMemory(MarketData):
 
         # we nan-out the first non-nan element of every col
         for col in self.returns.columns[:-1]:
-            self.returns[col].loc[
-                    (~(self.returns[col].isnull())).idxmax()
-                ] = np.nan
+            self.returns[col].loc[(~(self.returns[col].isnull())).idxmax()] = np.nan
 
         # and we drop the first row, which is mostly NaNs anyway
         self.returns = self.returns.iloc[1:]
 
         if self.volumes is not None:
-            new_volumes_index = pd.Series(
-                self.volumes.index, self.volumes.index
-                    ).resample(interval, closed='left',
-                               label='left').first().values
-            self.volumes = self.volumes.resample(
-                interval, closed='left', label='left').sum(min_count=1)
+            new_volumes_index = (
+                pd.Series(self.volumes.index, self.volumes.index)
+                .resample(interval, closed="left", label="left")
+                .first()
+                .values
+            )
+            self.volumes = self.volumes.resample(interval, closed="left", label="left").sum(min_count=1)
             self.volumes.index = new_volumes_index
 
             # last row is always unknown
@@ -1086,20 +1060,19 @@ class MarketDataInMemory(MarketData):
 
             # we nan-out the first non-nan element of every col
             for col in self.volumes.columns:
-                self.volumes[col].loc[
-                        (~(self.volumes[col].isnull())).idxmax()
-                    ] = np.nan
+                self.volumes[col].loc[(~(self.volumes[col].isnull())).idxmax()] = np.nan
 
             # and we drop the first row, which is mostly NaNs anyway
             self.volumes = self.volumes.iloc[1:]
 
         if self.prices is not None:
-            new_prices_index = pd.Series(
-                self.prices.index, self.prices.index
-                ).resample(
-                    interval, closed='left', label='left').first().values
-            self.prices = self.prices.resample(
-                interval, closed='left', label='left').first()
+            new_prices_index = (
+                pd.Series(self.prices.index, self.prices.index)
+                .resample(interval, closed="left", label="left")
+                .first()
+                .values
+            )
+            self.prices = self.prices.resample(interval, closed="left", label="left").first()
             self.prices.index = new_prices_index
 
             # # we drop the first row if its interval is small
@@ -1108,9 +1081,7 @@ class MarketDataInMemory(MarketData):
 
             # we nan-out the first non-nan element of every col
             for col in self.prices.columns:
-                self.prices[col].loc[
-                        (~(self.prices[col].isnull())).idxmax()
-                    ] = np.nan
+                self.prices[col].loc[(~(self.prices[col].isnull())).idxmax()] = np.nan
 
             # and we drop the first row, which is mostly NaNs anyway
             self.prices = self.prices.iloc[1:]
@@ -1119,16 +1090,16 @@ class MarketDataInMemory(MarketData):
         """Check sizes of user-provided dataframes."""
 
         if (not self.volumes is None) and (
-                not (self.volumes.shape[1] == self.returns.shape[1] - 1)
-                or not all(self.volumes.columns == self.returns.columns[:-1])):
-            raise SyntaxError(
-                'Volumes should have same columns as returns, minus cash_key.')
+            not (self.volumes.shape[1] == self.returns.shape[1] - 1)
+            or not all(self.volumes.columns == self.returns.columns[:-1])
+        ):
+            raise SyntaxError("Volumes should have same columns as returns, minus cash_key.")
 
         if (not self.prices is None) and (
-                not (self.prices.shape[1] == self.returns.shape[1] - 1)
-                or not all(self.prices.columns == self.returns.columns[:-1])):
-            raise SyntaxError(
-                'Prices should have same columns as returns, minus cash_key.')
+            not (self.prices.shape[1] == self.returns.shape[1] - 1)
+            or not all(self.prices.columns == self.returns.columns[:-1])
+        ):
+            raise SyntaxError("Prices should have same columns as returns, minus cash_key.")
 
     @property
     def periods_per_year(self):
@@ -1147,8 +1118,7 @@ class MarketDataInMemory(MarketData):
             name are required to include it.
         :rtype: int
         """
-        return int(np.round(self.periods_per_year * (
-            self._min_history_timedelta / pd.Timedelta('365.24d'))))
+        return int(np.round(self.periods_per_year * (self._min_history_timedelta / pd.Timedelta("365.24d"))))
 
 
 class UserProvidedMarketData(MarketDataInMemory):
@@ -1186,25 +1156,27 @@ class UserProvidedMarketData(MarketDataInMemory):
     :type cash_key: str
     """
 
-    def __init__(self, returns, volumes=None, prices=None,
-                 copy_dataframes=True, trading_frequency=None,
-                 min_history=pd.Timedelta('365.24d'),
-                 base_location=BASE_LOCATION,
-                 grace_period=pd.Timedelta('1d'),
-                 cash_key='USDOLLAR'):
-
+    def __init__(
+        self,
+        returns,
+        volumes=None,
+        prices=None,
+        copy_dataframes=True,
+        trading_frequency=None,
+        min_history=pd.Timedelta("365.24d"),
+        base_location=BASE_LOCATION,
+        grace_period=pd.Timedelta("1d"),
+        cash_key="USDOLLAR",
+    ):
         if returns is None:
-            raise SyntaxError(
-                "If you don't specify a universe you should pass `returns`.")
+            raise SyntaxError("If you don't specify a universe you should pass `returns`.")
 
         self.base_location = Path(base_location)
         self.cash_key = cash_key
 
         self.returns = pd.DataFrame(returns, copy=copy_dataframes)
-        self.volumes = volumes if volumes is None else\
-            pd.DataFrame(volumes, copy=copy_dataframes)
-        self.prices = prices if prices is None else\
-            pd.DataFrame(prices, copy=copy_dataframes)
+        self.volumes = volumes if volumes is None else pd.DataFrame(volumes, copy=copy_dataframes)
+        self.prices = prices if prices is None else pd.DataFrame(prices, copy=copy_dataframes)
 
         if cash_key != returns.columns[-1]:
             self._add_cash_column(cash_key, grace_period=grace_period)
@@ -1214,7 +1186,8 @@ class UserProvidedMarketData(MarketDataInMemory):
             trading_frequency=trading_frequency,
             base_location=base_location,
             cash_key=cash_key,
-            min_history=min_history)
+            min_history=min_history,
+        )
 
 
 class DownloadedMarketData(MarketDataInMemory):
@@ -1250,15 +1223,17 @@ class DownloadedMarketData(MarketDataInMemory):
     :type trading_frequency: str or None
     """
 
-    def __init__(self,
-                 universe=(),
-                 datasource='YahooFinance',
-                 cash_key='USDOLLAR',
-                 base_location=BASE_LOCATION,
-                 storage_backend='pickle',
-                 min_history=pd.Timedelta('365.24d'),
-                 grace_period=pd.Timedelta('1d'),
-                 trading_frequency=None):
+    def __init__(
+        self,
+        universe=(),
+        datasource="YahooFinance",
+        cash_key="USDOLLAR",
+        base_location=BASE_LOCATION,
+        storage_backend="pickle",
+        min_history=pd.Timedelta("365.24d"),
+        grace_period=pd.Timedelta("1d"),
+        trading_frequency=None,
+    ):
         """Initializer."""
 
         # drop duplicates and ensure ordering
@@ -1268,11 +1243,9 @@ class DownloadedMarketData(MarketDataInMemory):
         self.cash_key = cash_key
         if isinstance(datasource, type):
             self.datasource = datasource
-        else: # try to load in current module
+        else:  # try to load in current module
             self.datasource = globals()[datasource]
-        self._get_market_data(
-            universe, grace_period=grace_period,
-            storage_backend=storage_backend)
+        self._get_market_data(universe, grace_period=grace_period, storage_backend=storage_backend)
         self._add_cash_column(self.cash_key, grace_period=grace_period)
         self._remove_missing_recent()
 
@@ -1281,39 +1254,34 @@ class DownloadedMarketData(MarketDataInMemory):
             trading_frequency=trading_frequency,
             base_location=base_location,
             cash_key=cash_key,
-            min_history=min_history)
+            min_history=min_history,
+        )
 
     def _get_market_data(self, universe, grace_period, storage_backend):
         """Download market data."""
         database_accesses = {}
-        print('Updating data', end='')
+        print("Updating data", end="")
         sys.stdout.flush()
 
         for stock in universe:
-            logging.info(
-                'Updating %s with %s.', stock, self.datasource.__name__)
-            print('.', end='')
+            logging.info("Updating %s with %s.", stock, self.datasource.__name__)
+            print(".", end="")
             sys.stdout.flush()
             database_accesses[stock] = self.datasource(
-                stock, base_location=self.base_location,
-                grace_period=grace_period, storage_backend=storage_backend)
+                stock, base_location=self.base_location, grace_period=grace_period, storage_backend=storage_backend
+            )
         print()
 
-        if hasattr(self.datasource, 'IS_OHLCVR') and self.datasource.IS_OHLCVR:
-            self.returns = pd.DataFrame(
-                {stock: database_accesses[stock].data['return']
-                for stock in universe})
-            self.volumes = pd.DataFrame(
-                {stock: database_accesses[stock].data['valuevolume']
-                for stock in universe})
-            self.prices = pd.DataFrame(
-                {stock: database_accesses[stock].data['open']
-                for stock in universe})
+        if hasattr(self.datasource, "IS_OHLCVR") and self.datasource.IS_OHLCVR:
+            self.returns = pd.DataFrame({stock: database_accesses[stock].data["return"] for stock in universe})
+            self.volumes = pd.DataFrame({stock: database_accesses[stock].data["valuevolume"] for stock in universe})
+            self.prices = pd.DataFrame({stock: database_accesses[stock].data["open"] for stock in universe})
         else:  # for now only Fred for indexes, we assume prices!
             assert isinstance(database_accesses[universe[0]].data, pd.Series)
             self.prices = pd.DataFrame(
                 # open prices
-                {stock: database_accesses[stock].data for stock in universe})
+                {stock: database_accesses[stock].data for stock in universe}
+            )
             self.returns = 1 - self.prices / self.prices.shift(-1)
             self.volumes = None
 
@@ -1325,10 +1293,9 @@ class DownloadedMarketData(MarketDataInMemory):
         """
 
         if self.prices.iloc[-5:].isnull().any().any():
-            logging.debug(
-                'Removing some recent lines because there are missing values.')
+            logging.debug("Removing some recent lines because there are missing values.")
             drop_at = self.prices.iloc[-5:].isnull().any(axis=1).idxmax()
-            logging.debug('Dropping at index %s', drop_at)
+            logging.debug("Dropping at index %s", drop_at)
             self.returns = self.returns.loc[self.returns.index < drop_at]
             if self.prices is not None:
                 self.prices = self.prices.loc[self.prices.index < drop_at]
@@ -1359,8 +1326,8 @@ class DownloadedMarketData(MarketDataInMemory):
         """
         assert isinstance(partial_universe, pd.Index)
         assert np.all(partial_universe.isin(self.full_universe))
-        result = f'{self.__class__.__name__}('
-        result += f'datasource={self.datasource.__name__}, '
-        result += f'partial_universe_hash={hash_(np.array(partial_universe))},'
-        result += f' trading_frequency={self.trading_frequency})'
+        result = f"{self.__class__.__name__}("
+        result += f"datasource={self.datasource.__name__}, "
+        result += f"partial_universe_hash={hash_(np.array(partial_universe))},"
+        result += f" trading_frequency={self.trading_frequency})"
         return result

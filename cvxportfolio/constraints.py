@@ -45,7 +45,7 @@ import cvxpy as cp
 import numpy as np
 
 from .estimator import CvxpyExpressionEstimator, DataEstimator, Estimator
-from .forecast import HistoricalFactorizedCovariance, project_on_psd_cone_and_factorize
+from .forecast import HistoricalFactorizedCovariance, project_on_psd_cone_and_factorize, HistoricalMeanReturn
 
 __all__ = [
     "LongOnly",
@@ -985,7 +985,7 @@ class FullSigmaLimit(InequalityConstraint):
     :type limit: float or pd.Series
     """
 
-    def __init__(self, Sigma=HistoricalFactorizedCovariance, limit=1.0):
+    def __init__(self, limit, Sigma=HistoricalFactorizedCovariance):
         if isinstance(Sigma, type):
             Sigma = Sigma()
 
@@ -1036,3 +1036,46 @@ class FullSigmaLimit(InequalityConstraint):
     def _rhs(self):
         """Compile right hand side of the constraint expression."""
         return self.limit.parameter
+
+
+class ReturnsLimit(InequalityConstraint):
+    """A limit on the portfolio returns."""
+
+    def __init__(self, limit, r_hat=HistoricalMeanReturn, decay=1.0):
+        if isinstance(r_hat, type):
+            r_hat = r_hat()
+
+        # we don't use DataEstimator's parameter
+        # because we apply the decay
+        self.r_hat = DataEstimator(r_hat)
+        self.decay = decay
+        self._r_hat_parameter = None
+        self.limit = DataEstimator(limit, compile_parameter=True, ignore_shape_check=True)
+
+    def initialize_estimator(self, universe, trading_calendar):
+        """Initialize model with universe size.
+
+        :param universe: Trading universe, including cash.
+        :type universe: pandas.Index
+        :param trading_calendar: Future (including current) trading calendar.
+        :type trading_calendar: pandas.DatetimeIndex
+        """
+        self._r_hat_parameter = cp.Parameter(len(universe) - 1)
+
+    def values_in_time(self, mpo_step=0, **kwargs):
+        """Update returns parameter knowing which MPO step we're at.
+
+        :param mpo_step: MPO step, 0 is current.
+        :type mpo_step: int
+        :param kwargs: All other parameters to :meth:`values_in_time`.
+        :type kwargs: dict
+        """
+        self._r_hat_parameter.value = self.r_hat.current_value * self.decay ** (mpo_step)
+
+    def _compile_constr_to_cvxpy(self, w_plus, z, w_plus_minus_w_bm):
+        """Compile left hand side of the constraint expression."""
+        return -w_plus[:-1].T @ self._r_hat_parameter
+
+    def _rhs(self):
+        """Compile right hand side of the constraint expression."""
+        return -self.limit.parameter

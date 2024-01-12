@@ -29,15 +29,19 @@ from __future__ import annotations, print_function
 
 import collections
 import logging
+import pytz
 from typing import Dict
 
 import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+import plotly.express as px
+from plotly.subplots import make_subplots
 import numpy as np
 import pandas as pd
 
 from .utils import periods_per_year_from_datetime_index
 
-__all__ = ['BacktestResult']
+__all__ = ["BacktestResult", "PortfolioResult"]
 
 
 # def getFiscalQuarter(dt):
@@ -60,21 +64,18 @@ class BacktestResult:
 
     def __init__(self, universe, trading_calendar, costs):
         """Initialization of back-test result."""
-        self._h = pd.DataFrame(index=trading_calendar,
-                              columns=universe, dtype=float)
-        self._u = pd.DataFrame(index=trading_calendar,
-                              columns=universe, dtype=float)
-        self._z = pd.DataFrame(index=trading_calendar,
-                              columns=universe, dtype=float)
-        self.costs = {cost.__class__.__name__: pd.Series(
-            index=trading_calendar, dtype=float) for cost in costs}
+        self._h = pd.DataFrame(index=trading_calendar, columns=universe, dtype=float)
+        self._u = pd.DataFrame(index=trading_calendar, columns=universe, dtype=float)
+        self._z = pd.DataFrame(index=trading_calendar, columns=universe, dtype=float)
+        self.costs = {cost.__class__.__name__: pd.Series(index=trading_calendar, dtype=float) for cost in costs}
         self._policy_times = pd.Series(index=trading_calendar, dtype=float)
         self._simulator_times = pd.Series(index=trading_calendar, dtype=float)
         self._cash_returns = pd.Series(index=trading_calendar, dtype=float)
-        self._benchmark_returns = pd.Series(
-            index=trading_calendar, dtype=float)
+        self._benchmark_returns = pd.Series(index=trading_calendar, dtype=float)
         self._current_universe = pd.Index(universe)
         self._indexer = np.arange(len(universe), dtype=int)
+        self._start_time = trading_calendar[0]
+        self._end_time = trading_calendar[-1]
 
     @property
     def _current_full_universe(self):
@@ -96,7 +97,6 @@ class BacktestResult:
 
         # if necessary, expand columns of dataframes
         if not new_universe.isin(self._current_universe).all():
-
             # check that cash key didn't change!
             assert new_universe[-1] == self._current_universe[-1]
 
@@ -110,28 +110,33 @@ class BacktestResult:
 
             # otherwise we lose the ordering :(
             else:
-                logging.info(
-                    "%s joining new universe with old",
-                    self.__class__.__name__)
+                logging.info("%s joining new universe with old", self.__class__.__name__)
                 joined = pd.Index(
                     # need to join with full, not current!
-                    sorted(set(self._current_full_universe[:-1]
-                        ).union(new_universe[:-1])))
+                    sorted(set(self._current_full_universe[:-1]).union(new_universe[:-1]))
+                )
                 joined = joined.append(new_universe[-1:])
 
-            self._h = self._h.reindex(columns = joined)
-            self._u = self._u.reindex(columns = joined)
-            self._z = self._z.reindex(columns = joined)
+            self._h = self._h.reindex(columns=joined)
+            self._u = self._u.reindex(columns=joined)
+            self._z = self._z.reindex(columns=joined)
 
         assert new_universe.isin(self._h.columns).all()
         self._current_universe = new_universe
         self._indexer = self._h.columns.get_indexer(new_universe)
 
-    def _log_trading(self, t: pd.Timestamp,
-        h: pd.Series[float], u: pd.Series[float],
-        z: pd.Series[float], costs: Dict[str, float],
-        cash_return: float, benchmark_return: float or None,
-        policy_time: float, simulator_time: float):
+    def _log_trading(
+        self,
+        t: pd.Timestamp,
+        h: pd.Series[float],
+        u: pd.Series[float],
+        z: pd.Series[float],
+        costs: Dict[str, float],
+        cash_return: float,
+        benchmark_return: float or None,
+        policy_time: float,
+        simulator_time: float,
+    ):
         "Log one trading period."
 
         if not h.index.equals(self._current_universe):
@@ -160,7 +165,7 @@ class BacktestResult:
         # in case of bankruptcy
         if t_next < self._h.index[-1]:
             tidx = self._h.index.get_loc(t_next)
-            self._h = self._h.iloc[:tidx+1]
+            self._h = self._h.iloc[: tidx + 1]
             self._u = self._u.iloc[:tidx]
             self._z = self._z.iloc[:tidx]
             self._simulator_times = self._simulator_times.iloc[:tidx]
@@ -373,8 +378,7 @@ class BacktestResult:
         :returns: Turnover at each period.
         :rtype: pandas.Series
         """
-        return np.abs(self.u.iloc[:, :-1]).sum(axis=1) / (
-            2*self.v.loc[self.u.index])
+        return np.abs(self.u.iloc[:, :-1]).sum(axis=1) / (2 * self.v.loc[self.u.index])
 
     @property
     def returns(self):
@@ -392,9 +396,7 @@ class BacktestResult:
         :rtype: pandas.Series
         """
         val = self.v
-        return pd.Series(
-            data=val.values[1:] / val.values[:-1] - 1, index=val.index[:-1]
-        )
+        return pd.Series(data=val.values[1:] / val.values[:-1] - 1, index=val.index[:-1])
 
     #
     # Absolute metrics, defined in Chapter 3 Section 1
@@ -476,7 +478,7 @@ class BacktestResult:
         :returns: Quadratic risk.
         :rtype: float
         """
-        return self.volatility ** 2
+        return self.volatility**2
 
     @property
     def annualized_quadratic_risk(self):
@@ -603,8 +605,7 @@ class BacktestResult:
         :returns: Sharpe Ratio.
         :rtype: float
         """
-        return self.annualized_average_excess_return / (
-            self.annualized_excess_volatility + 1E-8)
+        return self.annualized_average_excess_return / (self.annualized_excess_volatility + 1e-8)
 
     @property
     def information_ratio(self):
@@ -623,8 +624,7 @@ class BacktestResult:
         :returns: Information Ratio, ``nan`` if benchmark is not defined.
         :rtype: float
         """
-        return self.annualized_average_active_return / (
-            self.annualized_active_volatility + 1E-8)
+        return self.annualized_average_active_return / (self.annualized_active_volatility + 1e-8)
 
     @property
     def excess_growth_rates(self):
@@ -764,92 +764,83 @@ class BacktestResult:
         """
 
         # US Letter size
-        fig, axes = plt.subplots(3, figsize=(8.5, 11), layout='constrained')
-        fig.suptitle('Back-test result')
+        fig, axes = plt.subplots(3, figsize=(8.5, 11), layout="constrained")
+        fig.suptitle("Back-test result")
 
         # value
-        self.v.plot(label='Portfolio value', ax=axes[0])
+        self.v.plot(label="Portfolio value", ax=axes[0])
         axes[0].set_ylabel(self.cash_key)
-        axes[0].set_yscale('log')
+        axes[0].set_yscale("log")
         axes[0].legend()
-        axes[0].grid(True, linestyle='--', which="both")
+        axes[0].grid(True, linestyle="--", which="both")
 
         # weights
-        biggest_weights = np.abs(self.w).mean(
-            ).sort_values().iloc[-how_many_weights:].index
+        biggest_weights = np.abs(self.w).mean().sort_values().iloc[-how_many_weights:].index
         self.w[biggest_weights].plot(ax=axes[1])
-        axes[1].set_ylabel(f'Largest {how_many_weights} weights')
-        axes[1].grid(True, linestyle='--')
+        axes[1].set_ylabel(f"Largest {how_many_weights} weights")
+        axes[1].grid(True, linestyle="--")
 
         # leverage / turnover
-        self.leverage.plot(ax=axes[2], linestyle='--',
-                           color='k', label='Leverage')
-        self.turnover.plot(ax=axes[2], linestyle='-',
-                           color='r', label='Turnover')
+        self.leverage.plot(ax=axes[2], linestyle="--", color="k", label="Leverage")
+        self.turnover.plot(ax=axes[2], linestyle="-", color="r", label="Turnover")
         axes[2].legend()
-        axes[2].grid(True, linestyle='--')
+        axes[2].grid(True, linestyle="--")
 
         if show:
-            fig.show() # pragma: no cover
+            fig.show()  # pragma: no cover
 
     def __repr__(self):
         """Print the class instance."""
 
-        stats = collections.OrderedDict({
-            "Universe size": self.h.shape[1],
-            "Initial timestamp": self.h.index[0],
-            "Final timestamp": self.h.index[-1],
-            "Number of periods": self.u.shape[0],
-            f"Initial value ({self.cash_key})": f"{self.initial_value:.3e}",
-            f"Final value ({self.cash_key})": f"{self.final_value:.3e}",
-            f"Profit ({self.cash_key})": f"{self.profit:.3e}",
-            ' '*4: '',
-            "Avg. return (annualized)":
-                f"{100 * self.annualized_average_return:.1f}%",
-            "Volatility (annualized)":
-                f"{100 * self.annualized_volatility:.1f}%",
-            "Avg. excess return (annualized)":
-                f"{100 * self.annualized_average_excess_return:.1f}%",
-            "Avg. active return (annualized)":
-                f"{100 * self.annualized_average_active_return:.1f}%",
-            "Excess volatility (annualized)":
-                f"{100 * self.annualized_excess_volatility:.1f}%",
-            "Active volatility (annualized)":
-                f"{100 * self.annualized_active_volatility:.1f}%",
-            ' '*5: '',
-            "Avg. growth rate (annualized)":
-                f"{100*self.annualized_average_growth_rate:.1f}%",
-            "Avg. excess growth rate (annualized)":
-                f"{100*self.annualized_average_excess_growth_rate:.1f}%",
-            "Avg. active growth rate (annualized)":
-                f"{100*self.annualized_average_active_growth_rate:.1f}%",
-        })
+        stats = collections.OrderedDict(
+            {
+                "Universe size": self.h.shape[1],
+                "Initial timestamp": self.h.index[0],
+                "Final timestamp": self.h.index[-1],
+                "Number of periods": self.u.shape[0],
+                f"Initial value ({self.cash_key})": f"{self.initial_value:.3e}",
+                f"Final value ({self.cash_key})": f"{self.final_value:.3e}",
+                f"Profit ({self.cash_key})": f"{self.profit:.3e}",
+                " " * 4: "",
+                "Avg. return (annualized)": f"{100 * self.annualized_average_return:.1f}%",
+                "Volatility (annualized)": f"{100 * self.annualized_volatility:.1f}%",
+                "Avg. excess return (annualized)": f"{100 * self.annualized_average_excess_return:.1f}%",
+                "Avg. active return (annualized)": f"{100 * self.annualized_average_active_return:.1f}%",
+                "Excess volatility (annualized)": f"{100 * self.annualized_excess_volatility:.1f}%",
+                "Active volatility (annualized)": f"{100 * self.annualized_active_volatility:.1f}%",
+                " " * 5: "",
+                "Avg. growth rate (annualized)": f"{100*self.annualized_average_growth_rate:.1f}%",
+                "Avg. excess growth rate (annualized)": f"{100*self.annualized_average_excess_growth_rate:.1f}%",
+                "Avg. active growth rate (annualized)": f"{100*self.annualized_average_active_growth_rate:.1f}%",
+            }
+        )
 
         if len(self.costs):
-            stats[' '*6] = ''
+            stats[" " * 6] = ""
         for cost in self.costs:
-            stats[f'Avg. {cost}'] = \
-                f"{(self.costs[cost]/self.v).mean()*1E4:.0f}bp"
-            stats[f'Max. {cost}'] = \
-                f"{(self.costs[cost]/self.v).max()*1E4:.0f}bp"
+            stats[f"Avg. {cost}"] = f"{(self.costs[cost]/self.v).mean()*1E4:.0f}bp"
+            stats[f"Max. {cost}"] = f"{(self.costs[cost]/self.v).max()*1E4:.0f}bp"
 
-        stats.update(collections.OrderedDict({
-            ' '*7: '',
-            "Sharpe ratio": f"{self.sharpe_ratio:.2f}",
-            "Information ratio": f"{self.information_ratio:.2f}",
-            ' '*8: '',
-            "Avg. drawdown": f"{self.drawdown.mean() * 100:.1f}%",
-            "Min. drawdown": f"{self.drawdown.min() * 100:.1f}%",
-            "Avg. leverage": f"{self.leverage.mean() * 100:.1f}%",
-            "Max. leverage": f"{self.leverage.max() * 100:.1f}%",
-            "Avg. turnover": f"{self.turnover.mean() * 100:.1f}%",
-            "Max. turnover": f"{self.turnover.max() * 100:.1f}%",
-            ' '*9: '',
-            "Avg. policy time": f"{self.policy_times.mean():.3f}s",
-            "Avg. simulator time": f"{self.simulator_times.mean():.3f}s",
-            "Total time":
-                f"{self.simulator_times.sum() + self.policy_times.sum():.3f}s",
-            }))
+        stats.update(
+            collections.OrderedDict(
+                {
+                    " " * 7: "",
+                    "Sharpe ratio": f"{self.sharpe_ratio:.2f}",
+                    "Information ratio": f"{self.information_ratio:.2f}",
+                    " " * 8: "",
+                    "Avg. drawdown": f"{self.drawdown.mean() * 100:.1f}%",
+                    "Min. drawdown": f"{self.drawdown.min() * 100:.1f}%",
+                    "Avg. leverage": f"{self.leverage.mean() * 100:.1f}%",
+                    "Max. leverage": f"{self.leverage.max() * 100:.1f}%",
+                    "Avg. turnover": f"{self.turnover.mean() * 100:.1f}%",
+                    "Max. turnover": f"{self.turnover.max() * 100:.1f}%",
+                    " " * 9: "",
+                    "Avg. policy time": f"{self.policy_times.mean():.3f}s",
+                    "Avg. simulator time": f"{self.simulator_times.mean():.3f}s",
+                    "Total time": f"{self.simulator_times.sum() + self.policy_times.sum():.3f}s",
+                }
+            )
+        )
 
         if np.all(np.isnan(self.active_returns)):
             del stats["Avg. active return (annualized)"]
@@ -858,6 +849,131 @@ class BacktestResult:
             del stats["Information ratio"]
 
         content = pd.Series(stats).to_string()
-        lenline = len(content.split('\n')[0])
+        lenline = len(content.split("\n")[0])
 
-        return '\n' + '#'*lenline + '\n' + content + '\n' + '#'*lenline + '\n'
+        return "\n" + "#" * lenline + "\n" + content + "\n" + "#" * lenline + "\n"
+
+
+class PortfolioResult:
+    def __init__(self, result, simulator):
+        self.result = result
+        self.filtered_ret = simulator.market_data.returns
+        # remove timezone info from simulator.market_data.original_returns.index
+        self.full_ret = simulator.market_data.original_returns.tz_localize(None).loc[self._start_time : self._end_time]
+        self._set_full_w()
+        self._set_full_v()
+
+    def plot(self, *args, **kwargs):
+        """Overwrite the plot method of the result object."""
+        pass
+
+    def plot_returns(self):
+        """Make plotly plot and return it.
+
+        :param show: if True, call ``matplotlib.Figure.show``, helpful when
+            running in the interpreter.
+        :type show: bool
+        :param how_many_weights: How many assets' weights are shown in the
+            weights plots. The ones with largest average absolute value
+            are chosen.
+        :type how_many_weights: int
+        """
+
+        # US Letter size in inches, converted to Plotly's default size in pixels (1 inch = 96 pixels)
+        fig = go.Figure()
+
+        # Portfolio value
+        fig.add_trace(
+            go.Scatter(
+                x=self.full_v.index,
+                y=self.full_v,
+                name="Portfolio value",
+                mode="lines",
+            )
+        )
+        fig.update_yaxes(
+            title_text=self.cash_key,
+            type="log",
+        )
+        fig.update_xaxes(
+            showgrid=True,
+            gridwidth=1,
+            gridcolor="LightGrey",
+        )
+
+        fig.show()
+
+    def plot_weights(self, how_many_weights=None):
+        # Weights
+        if how_many_weights==None:
+            biggest_weights = self.w.columns
+        else:
+            biggest_weights = np.abs(self.w).mean().sort_values().iloc[-how_many_weights:].index
+        fig = go.Figure()
+        for weight in biggest_weights:
+            fig.add_trace(
+                go.Scatter(
+                    x=self.full_w.index,
+                    y=self.full_w[weight],
+                    name=weight,
+                    mode="lines",
+                    legendgroup=weight,
+                )
+            )
+        fig.update_yaxes(title_text=f"Largest {how_many_weights} weights")
+        fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor="LightGrey")
+        fig.show()
+
+        # # Leverage / Turnover
+        # fig.add_trace(
+        #     go.Scatter(
+        #         x=self.leverage.index,
+        #         y=self.leverage,
+        #         name="Leverage",
+        #         mode="lines",
+        #         line=dict(dash="dash", color="black"),
+        #     ),
+        #     row=3,
+        #     col=1,
+        # )
+        # fig.add_trace(
+        #     go.Scatter(x=self.turnover.index, y=self.turnover, name="Turnover", mode="lines", line=dict(color="red")),
+        #     row=3,
+        #     col=1,
+        # )
+        # fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor="LightGrey", row=3, col=1)
+
+        # # Update layout
+        # fig.update_layout(height=1056, width=816, title_text="Back-test result", showlegend=True)
+
+        # # Show plot
+        # fig.show()
+
+    def _set_full_w(self):
+        """Get full portfolio weights."""
+        full_w = pd.DataFrame(index=self.full_ret.index, columns=self.w.columns)
+        full_w.loc[self.w.index] = self.w
+
+        # Forward fill the weights
+        full_w = full_w.fillna(method="ffill")
+
+        # Adjust the weights for returns
+        idx_not_in_w = full_w.index.difference(self.w.index)
+        for t in idx_not_in_w:
+            i = full_w.index.get_loc(t) - 1
+            full_w.loc[t] = (
+                full_w.iloc[i] * (1 + self.full_ret.loc[t]) / np.sum(full_w.iloc[i] * (1 + self.full_ret.loc[t]))
+            )
+
+        self.full_w = full_w
+
+    def _set_full_v(self):
+        """Get full portfolio value."""
+        self.full_v = pd.Series(index=self.full_ret.index)
+        self.full_v.iloc[0] = self.initial_value
+        weighted_ret = (self.full_ret * self.full_w.shift(1)).sum(axis=1)
+        self.full_v = self.full_v.iloc[0] * (1 + weighted_ret).cumprod()
+
+    # If you need to access other attributes or methods of the original result
+    def __getattr__(self, attr):
+        return getattr(self.result, attr)

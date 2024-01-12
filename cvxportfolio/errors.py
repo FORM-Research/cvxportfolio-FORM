@@ -13,10 +13,18 @@
 # limitations under the License.
 """This module defines some Exceptions thrown by Cvxportfolio objects."""
 
-__all__ = ['DataError', 'MissingTimesError',
-           'NaNError', 'MissingAssetsError', 'ForecastError',
-           'PortfolioOptimizationError', 'Bankruptcy',
-           'ConvexSpecificationError', 'ConvexityError']
+__all__ = [
+    "DataError",
+    "MissingTimesError",
+    "NaNError",
+    "MissingAssetsError",
+    "ForecastError",
+    "PortfolioOptimizationError",
+    "Bankruptcy",
+    "ConvexSpecificationError",
+    "ConvexityError",
+    "PortfolioError",
+]
 
 
 class DataError(Exception):
@@ -43,12 +51,17 @@ class PortfolioOptimizationError(Exception):
     """Errors with portfolio optimization problems."""
 
 
+class PortfolioError(Exception):
+    """Errors with portfolio construction problems."""
+
+
 class Bankruptcy(Exception):
     """A backtest resulted in a bankruptcy."""
 
 
 class ConvexSpecificationError(SyntaxError):
     """Some custom term does not comply with disciplined convex programming."""
+
     def __init__(self, term):
         super().__init__(
             "The convex optimization term"
@@ -61,8 +74,10 @@ class ConvexSpecificationError(SyntaxError):
 
 class ConvexityError(SyntaxError):
     """Some program term is not convex."""
+
     def __init__(self, cost):
         super().__init__(
             f"The cost term {cost}"
             " is not concave. (We need concavity since we maximize it.)"
-            " You probably have a cost's multiplier with the wrong sign.")
+            " You probably have a cost's multiplier with the wrong sign."
+        )
