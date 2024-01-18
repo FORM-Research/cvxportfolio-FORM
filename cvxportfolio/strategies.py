@@ -1,4 +1,4 @@
-"""This module contains common desired portfolios."""
+"""This module contains common desired strategies."""
 
 import copy
 import logging
@@ -19,7 +19,7 @@ from .errors import (
     DataError,
     MissingTimesError,
     PortfolioOptimizationError,
-    PortfolioError,
+    StrategyError,
 )
 from .estimator import DataEstimator, Estimator
 from .returns import CashReturn
@@ -31,28 +31,29 @@ from .risks import FullCovariance
 from .forecast import HistoricalFactorizedCovariance, HistoricalMeanReturn
 from .simulator import MarketSimulator
 from .data import BASE_LOCATION
-from .result import PortfolioResult
+from .result import StrategyResult
 
 from . import policies
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    "MeanVariancePortfolio",
+    "MeanVarianceStrategy",
 ]
 
 
-class Portfolio(ABC):
-    """A portfolio is a collection of assets and a policy for trading them.
+class Strategy(ABC):
+    """
+    A strategy is a set of rules for asset allocation over time.
 
     Parameters
     ----------
     assets : list of Asset
-        The assets in the portfolio.
+        The assets involved in the strategy.
     policy : Policy
-        The policy for trading the assets.
+        The policy for executing the strategy.
     cash_key : str, optional
-        The name of the cash column in the portfolio's data. Default is 'cash'.
+        The name of the cash column in the strategy's data. Default is 'cash'.
     """
 
     def __init__(self, universe: Optional[List[str]] = None, cash_key: Optional[str] = "cash"):
@@ -60,10 +61,10 @@ class Portfolio(ABC):
         self._cash_key = cash_key
 
     def __repr__(self):
-        return f"Portfolio(universe={self.universe}, cash_key={self.cash_key})"
+        return f"Strategy(universe={self.universe}, cash_key={self.cash_key})"
 
     def __str__(self):
-        return "Portfolio with %d assets and policy %s" % (len(self.assets), self.policy)
+        return "Strategy with %d assets and policy %s" % (len(self.assets), self.policy)
 
     def __eq__(self, other):
         return self.assets == other.assets and self.policy == other.policy and self.cash_key == other.cash_key
@@ -123,14 +124,14 @@ class Portfolio(ABC):
         self._universe = value
 
 
-class MeanVariancePortfolio(Portfolio):
+class MeanVarianceStrategy(Strategy):
     """
-    A portfolio class that implements mean-variance optimization.
+    A strategy class that implements mean-variance optimization.
 
     Attributes
     ----------
     universe : list
-        List of assets in the portfolio.
+        List of assets involved in the strategy.
     r_hat : Estimator or DataFrame
         Expected returns estimator or DataFrame.
     decay : float
@@ -140,7 +141,7 @@ class MeanVariancePortfolio(Portfolio):
     kelly : bool
         Whether to use the Kelly criterion.
     cash_key : str
-        Name of the cash column in the portfolio data.
+        Name of the cash column in the strategy
     """
 
     def __init__(
@@ -153,12 +154,12 @@ class MeanVariancePortfolio(Portfolio):
         cash_key="USDOLLAR",
     ):
         """
-        Initialize a MeanVariancePortfolio instance.
+        Initialize a MeanVarianceStrategy instance.
 
         Parameters
         ----------
         universe : list, optional
-            List of assets in the portfolio.
+            List of assets involved in the strategy.
         r_hat : Estimator or DataFrame, optional
             Expected returns estimator or DataFrame.
         decay : float, optional
@@ -168,7 +169,7 @@ class MeanVariancePortfolio(Portfolio):
         kelly : bool, optional
             Whether to use the Kelly criterion.
         cash_key : str, optional
-            Name of the cash column in the portfolio data.
+            Name of the cash column in the strategy data.
         """
         super().__init__(universe, cash_key=cash_key)
         self.returns_forecast = ReturnsForecast(r_hat=r_hat, decay=decay)
@@ -204,9 +205,9 @@ class MeanVariancePortfolio(Portfolio):
 
     @property
     def simulator(self):
-        """The market simulator for the portfolio."""
+        """The market simulator for the strategy."""
         if self._simulator is None:
-            raise PortfolioError("Simulator not set. A universe must be provided to initialize the simulator.")
+            raise StrategyError("Simulator not set. A universe must be provided to initialize the simulator.")
         return self._simulator
 
     @simulator.setter
@@ -215,7 +216,7 @@ class MeanVariancePortfolio(Portfolio):
 
     @property
     def results(self):
-        """The results of the portfolio backtest."""
+        """The results of the strategy backtest."""
         return self._results
 
     @results.setter
@@ -223,7 +224,7 @@ class MeanVariancePortfolio(Portfolio):
         if value is None:
             self._results = None
         else:
-            self._results = PortfolioResult(value, self.simulator)
+            self._results = StrategyResult(value, self.simulator)
 
     def add_constraint(self, constraint):
         # TODO: add type check for constraint
@@ -297,13 +298,13 @@ class MeanVariancePortfolio(Portfolio):
         # if self.covariance_forecast is None:
         #     raise PortfolioOptimizationError("Covariance forecast not set")
         if self.policy is None:
-            raise PortfolioError("Policy not set")
+            raise StrategyError("Policy not set")
         if self.planning_horizon is None:
-            raise PortfolioError("Planning horizon not set")
+            raise StrategyError("Planning horizon not set")
         if self.objective is None:
-            raise PortfolioError("Objective not set")
+            raise StrategyError("Objective not set")
         if len(self.constraints) == 0:
-            raise PortfolioError("Constraints not set")
+            raise StrategyError("Constraints not set")
         # if self.constraints is None:
         #     raise PortfolioOptimizationError("Constraints not set")
         # if self.simulator is None:

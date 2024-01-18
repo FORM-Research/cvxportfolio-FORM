@@ -24,6 +24,7 @@ __all__ = [
     "ConvexSpecificationError",
     "ConvexityError",
     "PortfolioError",
+    "StrategyError",
 ]
 
 
@@ -52,7 +53,11 @@ class PortfolioOptimizationError(Exception):
 
 
 class PortfolioError(Exception):
-    """Errors with portfolio construction problems."""
+    """Errors with portfolio construction."""
+
+
+class StrategyError(Exception):
+    """Errors with strategy."""
 
 
 class Bankruptcy(Exception):

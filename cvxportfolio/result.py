@@ -41,7 +41,7 @@ import pandas as pd
 
 from .utils import periods_per_year_from_datetime_index
 
-__all__ = ["BacktestResult", "PortfolioResult"]
+__all__ = ["BacktestResult", "StrategyResult"]
 
 
 # def getFiscalQuarter(dt):
@@ -854,7 +854,7 @@ class BacktestResult:
         return "\n" + "#" * lenline + "\n" + content + "\n" + "#" * lenline + "\n"
 
 
-class PortfolioResult:
+class StrategyResult:
     def __init__(self, result, simulator):
         self.result = result
         self.filtered_ret = simulator.market_data.returns
@@ -905,7 +905,7 @@ class PortfolioResult:
 
     def plot_weights(self, how_many_weights=None):
         # Weights
-        if how_many_weights==None:
+        if how_many_weights == None:
             biggest_weights = self.w.columns
         else:
             biggest_weights = np.abs(self.w).mean().sort_values().iloc[-how_many_weights:].index
