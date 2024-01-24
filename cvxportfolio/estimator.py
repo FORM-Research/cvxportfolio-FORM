@@ -74,11 +74,9 @@ class Estimator:
         # pylint: disable=arguments-differ
         for _, subestimator in self.__dict__.items():
             if hasattr(subestimator, "initialize_estimator_recursive"):
-                subestimator.initialize_estimator_recursive(
-                    universe=universe, trading_calendar=trading_calendar)
+                subestimator.initialize_estimator_recursive(universe=universe, trading_calendar=trading_calendar)
         if hasattr(self, "initialize_estimator"):
-            self.initialize_estimator(universe=universe,
-                                      trading_calendar=trading_calendar)
+            self.initialize_estimator(universe=universe, trading_calendar=trading_calendar)
 
     _current_value = None
 
@@ -114,6 +112,8 @@ class Estimator:
         :rtype: numpy.array, pandas.Series, pandas.DataFrame, ...
         """
         for _, subestimator in self.__dict__.items():
+            if hasattr(subestimator, "additional_assets"):
+                print("check")
             if hasattr(subestimator, "values_in_time_recursive"):
                 subestimator.values_in_time_recursive(**kwargs)
         if hasattr(self, "values_in_time"):
@@ -146,16 +146,15 @@ class Estimator:
         to define the logic of this directly insted of relying, e.g., on
         dataclasses logic, because we want to customize it to our usecase.
         """
-        lhs = self.__class__.__name__ + '('
-        core = ''
+        lhs = self.__class__.__name__ + "("
+        core = ""
         for name, attr in self.__dict__.items():
             if attr is None:
                 continue
-            if hasattr(attr, "values_in_time_recursive") or\
-                    hasattr(attr, "values_in_time") or (name[0] != '_'):
-                core += name + '=' + attr.__repr__() + ', '
+            if hasattr(attr, "values_in_time_recursive") or hasattr(attr, "values_in_time") or (name[0] != "_"):
+                core += name + "=" + attr.__repr__() + ", "
         core = core[:-2]  # remove trailing comma and space if present
-        rhs = ')'
+        rhs = ")"
         return lhs + core + rhs
 
 
@@ -239,10 +238,16 @@ class DataEstimator(Estimator):
     """
 
     def __init__(
-            self, data, use_last_available_time=False, allow_nans=False,
-            compile_parameter=False, non_negative=False,
-            positive_semi_definite=False, data_includes_cash=False,
-            ignore_shape_check=False):
+        self,
+        data,
+        use_last_available_time=False,
+        allow_nans=False,
+        compile_parameter=False,
+        non_negative=False,
+        positive_semi_definite=False,
+        data_includes_cash=False,
+        ignore_shape_check=False,
+    ):
         self.data = data
         self._use_last_available_time = use_last_available_time
         self._allow_nans = allow_nans
@@ -263,15 +268,15 @@ class DataEstimator(Estimator):
         :type trading_calendar: pandas.DatetimeIndex
         """
 
-        self._universe_maybe_noncash = \
-            universe if self._data_includes_cash else universe[:-1]
+        self._universe_maybe_noncash = universe if self._data_includes_cash else universe[:-1]
 
         if self._compile_parameter:
-            value = self._internal_values_in_time(
-                t=trading_calendar[0])
+            value = self._internal_values_in_time(t=trading_calendar[0])
             self.parameter = cp.Parameter(
                 value.shape if hasattr(value, "shape") else (),
-                PSD=self._positive_semi_definite, nonneg=self._non_negative)
+                PSD=self._positive_semi_definite,
+                nonneg=self._non_negative,
+            )
 
     def value_checker(self, result):
         """Ensure that only scalars or arrays without np.nan are returned.
@@ -289,9 +294,7 @@ class DataEstimator(Estimator):
 
         if isinstance(result, numbers.Number):
             if np.isnan(result) and not self._allow_nans:
-                raise NaNError(
-                    f"{self.__class__.__name__}.values_in_time_recursive"
-                    + " result is a np.nan scalar.")
+                raise NaNError(f"{self.__class__.__name__}.values_in_time_recursive" + " result is a np.nan scalar.")
             return result
 
         if isinstance(result, np.ndarray):
@@ -302,9 +305,7 @@ class DataEstimator(Estimator):
             # we pass a copy because it can be accidentally overwritten
             return np.array(result)
 
-        raise DataError(
-            f"{self.__class__.__name__}.values_in_time_recursive result"
-            + " is not a scalar or array.")
+        raise DataError(f"{self.__class__.__name__}.values_in_time_recursive result" + " is not a scalar or array.")
 
     def _universe_subselect(self, data):
         """This function subselects from ``data`` the relevant universe.
@@ -325,7 +326,7 @@ class DataEstimator(Estimator):
         """
 
         if (self._universe_maybe_noncash is None) or self._ignore_shape_check:
-            return data.values if hasattr(data, 'values') else data
+            return data.values if hasattr(data, "values") else data
 
         if isinstance(data, pd.Series):
             try:
@@ -335,14 +336,15 @@ class DataEstimator(Estimator):
                     "The pandas Series found by %s has index %s"
                     + " while the current universe%s"
                     + " is %s. It was not possible to reconcile the two.",
-                    self.__class__.__name__, data.index,
-                    ' minus cash' if not self._data_includes_cash else ' ',
-                    self._universe_maybe_noncash) from exc
+                    self.__class__.__name__,
+                    data.index,
+                    " minus cash" if not self._data_includes_cash else " ",
+                    self._universe_maybe_noncash,
+                ) from exc
 
         if isinstance(data, pd.DataFrame):
             try:
-                return data.loc[self._universe_maybe_noncash,
-                    self._universe_maybe_noncash].values
+                return data.loc[self._universe_maybe_noncash, self._universe_maybe_noncash].values
             except KeyError:
                 try:
                     return data.loc[:, self._universe_maybe_noncash].values
@@ -356,9 +358,11 @@ class DataEstimator(Estimator):
                 + " and columns %s"
                 + " while the current universe%s"
                 + " is %s. It was not possible to reconcile the two.",
-                self.__class__.__name__, data.columns,
-                ' minus cash' if not self._data_includes_cash else ' ',
-                self._universe_maybe_noncash)
+                self.__class__.__name__,
+                data.columns,
+                " minus cash" if not self._data_includes_cash else " ",
+                self._universe_maybe_noncash,
+            )
 
         if isinstance(data, np.ndarray):
             dimensions = data.shape
@@ -367,9 +371,11 @@ class DataEstimator(Estimator):
                     "The numpy array found by %s has dimensions %s"
                     + " while the current universe%s "
                     + "has size %s. It was not possible to reconcile the two.",
-                    self.__class__.__name__, data.shape,
-                    ' minus cash' if not self._data_includes_cash else ' ',
-                    len(self._universe_maybe_noncash))
+                    self.__class__.__name__,
+                    data.shape,
+                    " minus cash" if not self._data_includes_cash else " ",
+                    len(self._universe_maybe_noncash),
+                )
             return data
 
         # scalar
@@ -384,21 +390,30 @@ class DataEstimator(Estimator):
 
         # here (probably user-provided) we check
         if hasattr(self.data, "values_in_time"):
-            return self.value_checker(self._universe_subselect(
-                self.data.current_value if hasattr(self.data, 'current_value')
-                else self.data.values_in_time(t=t, **kwargs)))
+            return self.value_checker(
+                self._universe_subselect(
+                    self.data.current_value
+                    if hasattr(self.data, "current_value")
+                    else self.data.values_in_time(t=t, **kwargs)
+                )
+            )
 
         # if self.data is pandas and has datetime (first) index
-        if (hasattr(self.data, "loc") and hasattr(self.data, "index")
-            and (isinstance(self.data.index, pd.DatetimeIndex)
-                 or (isinstance(self.data.index, pd.MultiIndex) and
-                     isinstance(self.data.index.levels[0],
-                         pd.DatetimeIndex)))):
+        if (
+            hasattr(self.data, "loc")
+            and hasattr(self.data, "index")
+            and (
+                isinstance(self.data.index, pd.DatetimeIndex)
+                or (
+                    isinstance(self.data.index, pd.MultiIndex)
+                    and isinstance(self.data.index.levels[0], pd.DatetimeIndex)
+                )
+            )
+        ):
             try:
                 if self._use_last_available_time:
                     if isinstance(self.data.index, pd.MultiIndex):
-                        newt = self.data.index.levels[0][
-                            self.data.index.levels[0] <= t][-1]
+                        newt = self.data.index.levels[0][self.data.index.levels[0] <= t][-1]
                     else:
                         newt = self.data.index[self.data.index <= t][-1]
                     tmp = self.data.loc[newt]
@@ -413,7 +428,9 @@ class DataEstimator(Estimator):
                     + " for time %s. This could be due to wrong timezone"
                     + " setting: in general Cvxportfolio objects are timezone"
                     + " aware, the data you pass should be as well.",
-                     self, t) from exc
+                    self,
+                    t,
+                ) from exc
 
         # if data is pandas but no datetime index (constant in time)
         if hasattr(self.data, "values"):
@@ -438,8 +455,7 @@ class DataEstimator(Estimator):
         try:
             result = self._internal_values_in_time(**kwargs)
         except NaNError as exc:
-            raise NaNError(f"{self.__class__.__name__} found NaNs"
-                + f" at time {kwargs['t']}.") from exc
+            raise NaNError(f"{self.__class__.__name__} found NaNs" + f" at time {kwargs['t']}.") from exc
         if self.parameter is not None:
             self.parameter.value = result
         return result
@@ -448,7 +464,6 @@ class DataEstimator(Estimator):
         """Pretty-print."""
         if np.isscalar(self.data):
             return str(self.data)
-        if hasattr(self.data, 'values_in_time_recursive'
-            ) or hasattr(self.data, 'values_in_time'):
+        if hasattr(self.data, "values_in_time_recursive") or hasattr(self.data, "values_in_time"):
             return self.data.__repr__()
         return repr_numpy_pandas(self.data)

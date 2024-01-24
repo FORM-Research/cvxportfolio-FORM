@@ -22,8 +22,9 @@ class Portfolio(ABC):
     ----------
     """
 
-    def __init__(self):
+    def __init__(self, enable_custom_assets=False):
         self.strategies = []
+        self.enable_custom_assets = enable_custom_assets
 
     # TODO: impose cash_key and universe on all strategies
     @property
@@ -47,7 +48,16 @@ class Portfolio(ABC):
         self._universe = value
 
     def add_strategies(self, strategies: List):
-        self.strategies += strategies
+        # TODO: think about name strategies at the portfolio level
+        for strategy in strategies:
+            if self.enable_custom_assets:
+                strategy.enable_custom_assets = True
+            self.strategies.append(strategy)
+
+    def add_custom_asset(self, asset):
+        """Not implemented yet. Need to think about how to do this and if it is necessary."""
+        for strategy in self.strategies:
+            strategy.add_custom_asset(asset)
 
     def backtest(self, start_time=None, end_time=None, **kwargs):
         """Return the results of the portfolio simulation.

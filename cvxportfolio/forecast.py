@@ -74,15 +74,15 @@ def online_cache(values_in_time):
             cache[self] = {}
 
         if t in cache[self]:
-            logging.debug(
-                '%s.values_in_time at time %s is retrieved from cache.',
-                self, t)
+            logging.debug("%s.values_in_time at time %s is retrieved from cache.", self, t)
             result = cache[self][t]
         else:
             result = values_in_time(self, t=t, cache=cache, **kwargs)
-            logging.debug('%s.values_in_time at time %s is stored in cache.',
-                self, t)
+            logging.debug("%s.values_in_time at time %s is stored in cache.", self, t)
             cache[self][t] = result
+
+        if self._custom_assets:
+            result = self._add_custom_data(result, t)
         return result
 
     return wrapped
@@ -92,28 +92,31 @@ class BaseForecast(Estimator):
     """Base class for forecasters."""
 
     _last_time = None
+    # Below is shared by all forecasters that inherit from this class and could be
+    # used intelligently to avoid data seperation TBD
+    # _custom_assets = False
+    # additional_assets = {}
 
     def _agnostic_update(self, t, past_returns):
         """Choose whether to make forecast from scratch or update last one."""
-        if (self._last_time is None) or (
-            self._last_time != past_returns.index[-1]):
-            logging.debug(
-                '%s.values_in_time at time %s is computed from scratch.',
-                self, t)
+        if (self._last_time is None) or (self._last_time != past_returns.index[-1]):
+            logging.debug("%s.values_in_time at time %s is computed from scratch.", self, t)
             self._initial_compute(t=t, past_returns=past_returns)
         else:
-            logging.debug(
-              '%s.values_in_time at time %s is updated from previous value.',
-              self, t)
+            logging.debug("%s.values_in_time at time %s is updated from previous value.", self, t)
             self._online_update(t=t, past_returns=past_returns)
 
     def _initial_compute(self, t, past_returns):
         """Make forecast from scratch."""
-        raise NotImplementedError # pragma: no cover
+        raise NotImplementedError  # pragma: no cover
 
     def _online_update(self, t, past_returns):
         """Update forecast from period before."""
-        raise NotImplementedError # pragma: no cover
+        raise NotImplementedError  # pragma: no cover
+
+    def _add_custom_data(self, data, t):
+        """Add custom assets to the provided data. This method will change depending on the forecaster."""
+        return print("Feature not implemented for this forecaster.")
 
 
 @dataclass(unsafe_hash=True)
@@ -122,11 +125,15 @@ class HistoricalMeanReturn(BaseForecast):
 
     This ignores both the cash returns column and all missing values.
     """
+    additional_assets = {}
+    _custom_assets = False
 
     def __post_init__(self):
         self._last_time = None
         self._last_counts = None
         self._last_sum = None
+        # self.additional_assets = {}
+        # self._custom_assets = False
 
     def initialize_estimator(self, universe, trading_calendar):
         """Re-initialize whenever universe changes.
@@ -152,7 +159,10 @@ class HistoricalMeanReturn(BaseForecast):
         :rtype: numpy.array
         """
         self._agnostic_update(t=t, past_returns=past_returns)
-        return (self._last_sum / self._last_counts).values
+        r_hat = (self._last_sum / self._last_counts).values
+        if self._custom_assets:
+            r_hat = self._add_custom_data(r_hat, t)
+        return r_hat
 
     def _initial_compute(self, t, past_returns):
         """Make forecast from scratch."""
@@ -163,8 +173,21 @@ class HistoricalMeanReturn(BaseForecast):
     def _online_update(self, t, past_returns):
         """Update forecast from period before."""
         self._last_counts += ~(past_returns.iloc[-1, :-1].isnull())
-        self._last_sum += past_returns.iloc[-1, :-1].fillna(0.)
+        self._last_sum += past_returns.iloc[-1, :-1].fillna(0.0)
         self._last_time = t
+
+    def _add_custom_asset(self, asset_name, returns):
+        try:
+            self._custom_assets = True
+            self.additional_assets[asset_name] = returns
+        except KeyError:
+            raise KeyError("The custom asset must have a 'mean_return' attribute.")
+
+    def _add_custom_data(self, data, t):
+        # get the mean return for each custom asset in self dictionary that has {asset_name: value, ...}}
+        # and add it to the diagonal of the covariance matrix
+        for asset_name, asset_data in self.additional_assets.items():
+            data.append(asset_data.loc[t])
 
 
 @dataclass(unsafe_hash=True)
@@ -220,13 +243,13 @@ class HistoricalVariance(BaseForecast):
     def _initial_compute(self, t, past_returns):
         """Compute from scratch."""
         self._last_counts = past_returns.iloc[:, :-1].count()
-        self._last_sum = (past_returns.iloc[:, :-1]**2).sum()
+        self._last_sum = (past_returns.iloc[:, :-1] ** 2).sum()
         self._last_time = t
 
     def _online_update(self, t, past_returns):
         """Update from estimate at t-1."""
         self._last_counts += ~(past_returns.iloc[-1, :-1].isnull())
-        self._last_sum += past_returns.iloc[-1, :-1].fillna(0.)**2
+        self._last_sum += past_returns.iloc[-1, :-1].fillna(0.0) ** 2
         self._last_time = t
 
 
@@ -249,9 +272,9 @@ class HistoricalStandardDeviation(HistoricalVariance):
         :returns: Standard deviations of past returns (excluding cash).
         :rtype: numpy.array
         """
-        variances = \
-            super().values_in_time(t=t, past_returns=past_returns, **kwargs)
+        variances = super().values_in_time(t=t, past_returns=past_returns, **kwargs)
         return np.sqrt(variances)
+
 
 class HistoricalMeanError(HistoricalVariance):
     r"""Historical standard deviations of the mean of non-cash returns.
@@ -279,8 +302,7 @@ class HistoricalMeanError(HistoricalVariance):
             cash).
         :rtype: numpy.array
         """
-        variance = super().values_in_time(
-            t=t, past_returns=past_returns, **kwargs)
+        variance = super().values_in_time(t=t, past_returns=past_returns, **kwargs)
         return np.sqrt(variance / self._last_counts.values)
 
 
@@ -290,7 +312,7 @@ class HistoricalLowRankCovarianceSVD(Estimator):
 
     num_factors: int
     svd_iters: int = 10
-    svd: str = 'numpy'
+    svd: str = "numpy"
 
     # brought back from old commit;
     #
@@ -302,7 +324,7 @@ class HistoricalLowRankCovarianceSVD(Estimator):
     # by terminating early if idyosyncratic becomes negative
 
     @staticmethod
-    def build_low_rank_model(rets, num_factors=10, iters=10, svd='numpy'):
+    def build_low_rank_model(rets, num_factors=10, iters=10, svd="numpy"):
         r"""Build a low rank risk model from past returns that include NaNs.
 
         This is an experimental procedure that may work well on past
@@ -331,35 +353,32 @@ class HistoricalLowRankCovarianceSVD(Estimator):
         normalizer = np.sqrt((rets**2).mean())
         normalized = rets
         if nan_fraction:
-            nan_implicit_imputation = pd.DataFrame(0.,
-                columns=normalized.columns, index = normalized.index)
+            nan_implicit_imputation = pd.DataFrame(0.0, columns=normalized.columns, index=normalized.index)
             for _ in range(iters):
-                if svd == 'numpy':
-                    u, s, v = np.linalg.svd(
-                        normalized.fillna(nan_implicit_imputation),
-                        full_matrices=False)
+                if svd == "numpy":
+                    u, s, v = np.linalg.svd(normalized.fillna(nan_implicit_imputation), full_matrices=False)
                 else:
-                    raise SyntaxError(
-                        'Currently only numpy svd is implemented')
+                    raise SyntaxError("Currently only numpy svd is implemented")
                 nan_implicit_imputation = pd.DataFrame(
-                    (u[:, :num_factors] * (s[:num_factors]
-                        )) @ v[:num_factors],
-                    columns = normalized.columns, index = normalized.index)
+                    (u[:, :num_factors] * (s[:num_factors])) @ v[:num_factors],
+                    columns=normalized.columns,
+                    index=normalized.index,
+                )
         else:
-            if svd == 'numpy':
+            if svd == "numpy":
                 u, s, v = np.linalg.svd(normalized, full_matrices=False)
             else:
-                raise SyntaxError(
-                    'Currently only numpy svd is implemented')
+                raise SyntaxError("Currently only numpy svd is implemented")
         F = v[:num_factors].T * s[:num_factors] / np.sqrt(len(rets))
         F = pd.DataFrame(F.T, columns=normalizer.index)
         idyosyncratic = normalizer**2 - (F**2).sum(0)
-        if not np.all(idyosyncratic >= 0.):
+        if not np.all(idyosyncratic >= 0.0):
             raise ForecastError(
                 "Low rank risk estimation with iterative SVD did not work."
                 + " You probably have too many missing values in the past"
                 + " returns. You may try with HistoricalFactorizedCovariance,"
-                + " or change your universe.")
+                + " or change your universe."
+            )
         return F.values, idyosyncratic.values
 
     @online_cache
@@ -375,9 +394,9 @@ class HistoricalLowRankCovarianceSVD(Estimator):
              cash.
         :rtype: (numpy.array, numpy.array)
         """
-        return self.build_low_rank_model(past_returns.iloc[:, :-1],
-            num_factors=self.num_factors,
-            iters=self.svd_iters, svd=self.svd)
+        return self.build_low_rank_model(
+            past_returns.iloc[:, :-1], num_factors=self.num_factors, iters=self.svd_iters, svd=self.svd
+        )
 
 
 def project_on_psd_cone_and_factorize(covariance):
@@ -391,8 +410,9 @@ def project_on_psd_cone_and_factorize(covariance):
     :rtype: numpy.array
     """
     eigval, eigvec = np.linalg.eigh(covariance)
-    eigval = np.maximum(eigval, 0.)
+    eigval = np.maximum(eigval, 0.0)
     return eigvec @ np.diag(np.sqrt(eigval))
+
 
 @dataclass(unsafe_hash=True)
 class HistoricalFactorizedCovariance(BaseForecast):
@@ -414,12 +434,16 @@ class HistoricalFactorizedCovariance(BaseForecast):
 
     # this is used by FullCovariance
     FACTORIZED = True
+    _custom_assets = False
+    additional_assets = {}
 
     def __post_init__(self):
         self._last_time = None
         self._last_counts_matrix = None
         self._last_sum_matrix = None
         self._joint_mean = None
+        # self._custom_assets = False
+        # self.additional_assets = {}
 
     def initialize_estimator(self, universe, trading_calendar):
         """Re-initialize whenever universe changes.
@@ -439,20 +463,20 @@ class HistoricalFactorizedCovariance(BaseForecast):
 
             \text{Count}\left(r^{i}r^{j} \neq \texttt{nan}\right).
         """
-        tmp = (~past_returns.iloc[:, :-1].isnull()) * 1.
+        tmp = (~past_returns.iloc[:, :-1].isnull()) * 1.0
         return tmp.T @ tmp
 
     @staticmethod
     def _get_initial_joint_mean(past_returns):
         r"""Compute precursor of :math:`\Sigma_{i,j} =
         \mathbf{E}[r^{i}]\mathbf{E}[r^{j}]`."""
-        nonnull = (~past_returns.iloc[:, :-1].isnull()) * 1.
-        tmp = nonnull.T @ past_returns.iloc[:, :-1].fillna(0.)
+        nonnull = (~past_returns.iloc[:, :-1].isnull()) * 1.0
+        tmp = nonnull.T @ past_returns.iloc[:, :-1].fillna(0.0)
         return tmp  # * tmp.T
 
     def _initial_compute(self, t, past_returns):
         self._last_counts_matrix = self._get_count_matrix(past_returns).values
-        filled = past_returns.iloc[:, :-1].fillna(0.).values
+        filled = past_returns.iloc[:, :-1].fillna(0.0).values
         self._last_sum_matrix = filled.T @ filled
         if not self.kelly:
             self._joint_mean = self._get_initial_joint_mean(past_returns)
@@ -462,7 +486,7 @@ class HistoricalFactorizedCovariance(BaseForecast):
     def _online_update(self, t, past_returns):
         nonnull = ~(past_returns.iloc[-1, :-1].isnull())
         self._last_counts_matrix += np.outer(nonnull, nonnull)
-        last_ret = past_returns.iloc[-1, :-1].fillna(0.)
+        last_ret = past_returns.iloc[-1, :-1].fillna(0.0)
         self._last_sum_matrix += np.outer(last_ret, last_ret)
         self._last_time = t
         if not self.kelly:
@@ -494,8 +518,26 @@ class HistoricalFactorizedCovariance(BaseForecast):
             tmp = self._joint_mean / self._last_counts_matrix
             covariance -= tmp.T * tmp
         try:
+            print("covariance", covariance)
             return project_on_psd_cone_and_factorize(covariance)
         except np.linalg.LinAlgError as exc:
-            raise ForecastError(f'Covariance estimation at time {t} failed;'
-                + ' there are (probably) too many missing values in the'
-                + ' past returns.') from exc
+            raise ForecastError(
+                f"Covariance estimation at time {t} failed;"
+                + " there are (probably) too many missing values in the"
+                + " past returns."
+            ) from exc
+
+    def _add_custom_asset(self, asset_name, std: pd.Series):
+        try:
+            self._custom_assets = True
+            self.additional_assets[asset_name] = np.square(std)
+        except KeyError:
+            raise KeyError("The custom asset must have a 'std' attribute.")
+
+    def _add_custom_data(self, data, t):
+        # get the variance element for each custom asset in self dictionary that has {asset_name: value, ...}}
+        # and add it to the diagonal of the covariance matrix
+        for asset_name, asset_data in self.additional_assets.items():
+            data.loc[asset_name, asset_name] = asset_data.loc[t]
+            data.loc[asset_name, :-1] = 0
+            data.loc[:-1, asset_name] = 0

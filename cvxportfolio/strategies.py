@@ -28,7 +28,7 @@ from .costs import StocksTransactionCost
 from .returns import ReturnsForecast
 from .constraints import LongOnly, LeverageLimit, FullSigmaLimit, ReturnsLimit
 from .risks import FullCovariance
-from .forecast import HistoricalFactorizedCovariance, HistoricalMeanReturn
+from .forecast import HistoricalFactorizedCovariance, HistoricalMeanReturn, BaseForecast
 from .simulator import MarketSimulator
 from .data import BASE_LOCATION
 from .result import StrategyResult
@@ -123,6 +123,14 @@ class Strategy(ABC):
             raise TypeError("universe must be a list of strings")
         self._universe = value
 
+    def _add_custom_asset(self, **kwargs):
+        raise NotImplementedError("Custom assets are not available for this strategy")
+
+    def add_custom_asset(self, asset):
+        if not self.enable_custom_assets:
+            raise NotImplementedError("Custom assets are not enabled for this strategy")
+        self._add_custom_asset(**asset)
+
 
 class MeanVarianceStrategy(Strategy):
     """
@@ -152,9 +160,12 @@ class MeanVarianceStrategy(Strategy):
         Sigma=HistoricalFactorizedCovariance,
         kelly=False,
         cash_key="USDOLLAR",
+        strategy_name="MeanVarianceStrategy",
+        enable_custom_assets=False,
     ):
         """
         Initialize a MeanVarianceStrategy instance.
+        Currently only supports constrained version of the portfolio not lagrangian version.
 
         Parameters
         ----------
@@ -183,6 +194,7 @@ class MeanVarianceStrategy(Strategy):
         self.policy = None
         self.simulator = None
         self.results = None
+        self.enable_custom_assets = enable_custom_assets
 
     @property
     def objective(self):
@@ -250,6 +262,30 @@ class MeanVarianceStrategy(Strategy):
         self.return_target = return_target
         self.objective = -self.covariance_forecast
         self.constraints += [ReturnsLimit(return_target, self.returns_forecast.r_hat)]
+
+    def _add_custom_asset(self, name: str, returns: pd.Series, std: pd.Series, **kwargs):
+        if self.risk_target is not None:
+            # find FullSigmaLimit constraint in constraints
+            for constraint in self.constraints:
+                if isinstance(constraint, FullSigmaLimit):
+                    # TODO: make this more robust to nestedness
+                    # TODO: this is ugly
+                    constraint.Sigma.data.data._add_custom_asset(name, std)
+            for cost in self.objective.costs:
+                if isinstance(cost, ReturnsForecast):
+                    cost.r_hat.data._add_custom_asset(name, returns)
+
+        elif self.return_target is not None:
+            # find ReturnsLimit constraint in constraints
+            for constraint in self.constraints:
+                if isinstance(constraint, ReturnsLimit):
+                    constraint.r_hat.data.data._add_custom_asset(name, returns)
+            self.objective.Sigma.data._add_custom_asset(name, std)
+
+        else:
+            raise StrategyError(
+                "Either risk_target or return_target must be set before adding custom assets. (Currently)"
+            )
 
     def add_transaction_penalty(self, gamma_trade, **kwargs):
         """Add a transaction penalty to the portfolio."""
