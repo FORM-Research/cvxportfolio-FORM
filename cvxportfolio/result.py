@@ -952,7 +952,7 @@ class StrategyResult:
     def _set_full_w(self):
         """Get full portfolio weights."""
         full_w = pd.DataFrame(index=self.full_ret.index, columns=self.w.columns)
-        full_w.loc[self.w.index] = self.w
+        full_w.loc[self.w_plus.index] = self.w_plus
 
         # Forward fill the weights
         full_w = full_w.fillna(method="ffill")

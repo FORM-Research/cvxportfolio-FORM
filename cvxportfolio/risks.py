@@ -21,9 +21,12 @@ import numpy as np
 
 from .costs import Cost
 from .estimator import DataEstimator
-from .forecast import (HistoricalFactorizedCovariance,
-                       HistoricalLowRankCovarianceSVD, HistoricalVariance,
-                       project_on_psd_cone_and_factorize)
+from .forecast import (
+    HistoricalFactorizedCovariance,
+    HistoricalLowRankCovarianceSVD,
+    HistoricalVariance,
+    project_on_psd_cone_and_factorize,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -60,12 +63,10 @@ class FullCovariance(Cost):
     """
 
     def __init__(self, Sigma=HistoricalFactorizedCovariance):
-
         if isinstance(Sigma, type):
             Sigma = Sigma()
 
-        self._alreadyfactorized = hasattr(Sigma, 'FACTORIZED')\
-            and Sigma.FACTORIZED
+        self._alreadyfactorized = hasattr(Sigma, "FACTORIZED") and Sigma.FACTORIZED
 
         self.Sigma = DataEstimator(Sigma)
         self._sigma_sqrt = None
@@ -78,7 +79,7 @@ class FullCovariance(Cost):
         :param trading_calendar: Future (including current) trading calendar.
         :type trading_calendar: pandas.DatetimeIndex
         """
-        self._sigma_sqrt = cp.Parameter((len(universe)-1, len(universe)-1))
+        self._sigma_sqrt = cp.Parameter((len(universe) - 1, len(universe) - 1))
 
     def values_in_time(self, **kwargs):
         """Update parameters of risk model.
@@ -89,8 +90,7 @@ class FullCovariance(Cost):
         if self._alreadyfactorized:
             self._sigma_sqrt.value = self.Sigma.current_value
         else:
-            self._sigma_sqrt.value = project_on_psd_cone_and_factorize(
-                self.Sigma.current_value)
+            self._sigma_sqrt.value = project_on_psd_cone_and_factorize(self.Sigma.current_value)
 
     def compile_to_cvxpy(self, w_plus, z, w_plus_minus_w_bm):
         """Compile risk term to cvxpy expression.
@@ -106,8 +106,7 @@ class FullCovariance(Cost):
         :returns: Cvxpy expression representing the risk model.
         :rtype: cvxpy.expression
         """
-        self.cvxpy_expression = cp.sum_squares(
-            self._sigma_sqrt.T @ w_plus_minus_w_bm[:-1])
+        self.cvxpy_expression = cp.sum_squares(self._sigma_sqrt.T @ w_plus_minus_w_bm[:-1])
         return self.cvxpy_expression
 
 
@@ -124,7 +123,6 @@ class RiskForecastError(Cost):
     """
 
     def __init__(self, sigma_squares=HistoricalVariance):
-
         if isinstance(sigma_squares, type):
             sigma_squares = sigma_squares()
 
@@ -138,8 +136,7 @@ class RiskForecastError(Cost):
         :param trading_calendar: Future (including current) trading calendar.
         :type trading_calendar: pandas.DatetimeIndex
         """
-        self.sigmas_parameter = cp.Parameter(
-            len(universe)-1, nonneg=True)  # +self.kelly))
+        self.sigmas_parameter = cp.Parameter(len(universe) - 1, nonneg=True)  # +self.kelly))
 
     def values_in_time(self, **kwargs):
         """Update parameters of risk model.
@@ -165,8 +162,7 @@ class RiskForecastError(Cost):
         :returns: Cvxpy expression representing the risk model.
         :rtype: cvxpy.expression
         """
-        return cp.square(
-            cp.abs(w_plus_minus_w_bm[:-1]).T @ self.sigmas_parameter)
+        return cp.square(cp.abs(w_plus_minus_w_bm[:-1]).T @ self.sigmas_parameter)
 
 
 class DiagonalCovariance(Cost):
@@ -179,7 +175,6 @@ class DiagonalCovariance(Cost):
     """
 
     def __init__(self, sigma_squares=HistoricalVariance):
-
         if isinstance(sigma_squares, type):
             sigma_squares = sigma_squares()
         self.sigma_squares = DataEstimator(sigma_squares)
@@ -192,7 +187,7 @@ class DiagonalCovariance(Cost):
         :param trading_calendar: Future (including current) trading calendar.
         :type trading_calendar: pandas.DatetimeIndex
         """
-        self.sigmas_parameter = cp.Parameter(len(universe)-1)  # +self.kelly))
+        self.sigmas_parameter = cp.Parameter(len(universe) - 1)  # +self.kelly))
 
     def values_in_time(self, **kwargs):
         """Update parameters of risk model.
@@ -217,8 +212,7 @@ class DiagonalCovariance(Cost):
         :returns: Cvxpy expression representing the risk model.
         :rtype: cvxpy.expression
         """
-        return cp.sum_squares(cp.multiply(w_plus_minus_w_bm[:-1],
-            self.sigmas_parameter))
+        return cp.sum_squares(cp.multiply(w_plus_minus_w_bm[:-1], self.sigmas_parameter))
 
 
 class FactorModelCovariance(Cost):
@@ -289,25 +283,28 @@ class FactorModelCovariance(Cost):
     :type F_and_d_Forecaster: Estimator
     """
 
-    def __init__(self, F=None, d=None, Sigma_F=None, num_factors=1,
-            Sigma=HistoricalFactorizedCovariance,
-            F_and_d_Forecaster=HistoricalLowRankCovarianceSVD):
+    def __init__(
+        self,
+        F=None,
+        d=None,
+        Sigma_F=None,
+        num_factors=1,
+        Sigma=HistoricalFactorizedCovariance,
+        F_and_d_Forecaster=HistoricalLowRankCovarianceSVD,
+    ):
         self.F = F if F is None else DataEstimator(F, compile_parameter=True)
         self.d = d if d is None else DataEstimator(d)
-        self.Sigma_F = Sigma_F if Sigma_F is None else DataEstimator(
-            Sigma_F, ignore_shape_check=True)
+        self.Sigma_F = Sigma_F if Sigma_F is None else DataEstimator(Sigma_F, ignore_shape_check=True)
         if (self.F is None) or (self.d is None):
             self._fit = True
             if Sigma is None:
                 if isinstance(F_and_d_Forecaster, type):
-                    F_and_d_Forecaster = F_and_d_Forecaster(
-                        num_factors=num_factors)
+                    F_and_d_Forecaster = F_and_d_Forecaster(num_factors=num_factors)
                 self.F_and_d_Forecaster = F_and_d_Forecaster
             else:
                 if isinstance(Sigma, type):
                     Sigma = Sigma()
-                self._alreadyfactorized = hasattr(Sigma, 'FACTORIZED')\
-                    and Sigma.FACTORIZED
+                self._alreadyfactorized = hasattr(Sigma, "FACTORIZED") and Sigma.FACTORIZED
                 self.Sigma = DataEstimator(Sigma)
             self.num_factors = num_factors
         else:
@@ -322,18 +319,16 @@ class FactorModelCovariance(Cost):
         :param trading_calendar: Future (including current) trading calendar.
         :type trading_calendar: pandas.DatetimeIndex
         """
-        self.idyosync_sqrt_parameter = cp.Parameter(len(universe)-1)
+        self.idyosync_sqrt_parameter = cp.Parameter(len(universe) - 1)
         if self._fit:
-            effective_num_factors = min(self.num_factors, len(universe)-1)
-            self.factor_exposures_parameter = cp.Parameter(
-                (effective_num_factors, len(universe)-1))
+            effective_num_factors = min(self.num_factors, len(universe) - 1)
+            self.factor_exposures_parameter = cp.Parameter((effective_num_factors, len(universe) - 1))
         else:
             if self.Sigma_F is None:
                 self.factor_exposures_parameter = self.F.parameter
             else:
                 # we could refactor the code here so we don't create duplicate parameters
-                self.factor_exposures_parameter = cp.Parameter(
-                    self.F.parameter.shape)
+                self.factor_exposures_parameter = cp.Parameter(self.F.parameter.shape)
 
     def values_in_time(self, **kwargs):
         """Update internal parameters.
@@ -342,24 +337,23 @@ class FactorModelCovariance(Cost):
         :type kwargs: dict
         """
         if self._fit:
-            if hasattr(self, 'F_and_d_Forecaster'):
-                self.factor_exposures_parameter.value, d = \
-                    self.F_and_d_Forecaster.current_value
+            if hasattr(self, "F_and_d_Forecaster"):
+                self.factor_exposures_parameter.value, d = self.F_and_d_Forecaster.current_value
             else:
-                sigma_sqrt = self.Sigma.current_value \
-                    if self._alreadyfactorized \
-                    else project_on_psd_cone_and_factorize(
-                        self.Sigma.current_value)
+                sigma_sqrt = (
+                    self.Sigma.current_value
+                    if self._alreadyfactorized
+                    else project_on_psd_cone_and_factorize(self.Sigma.current_value)
+                )
                 # numpy eigendecomposition has largest eigenvalues last
-                self.factor_exposures_parameter.value = sigma_sqrt[
-                    :, -self.num_factors:].T
-                d = np.sum(sigma_sqrt[:, :-self.num_factors]**2, axis=1)
+                self.factor_exposures_parameter.value = sigma_sqrt[:, -self.num_factors :].T
+                d = np.sum(sigma_sqrt[:, : -self.num_factors] ** 2, axis=1)
         else:
             d = self.d.current_value
             if not self.Sigma_F is None:
                 self.factor_exposures_parameter.value = (
-                    self.F.parameter.value.T @ np.linalg.cholesky(
-                        self.Sigma_F.current_value)).T
+                    self.F.parameter.value.T @ np.linalg.cholesky(self.Sigma_F.current_value)
+                ).T
 
         self.idyosync_sqrt_parameter.value = np.sqrt(d)
 
@@ -377,12 +371,10 @@ class FactorModelCovariance(Cost):
         :returns: Cvxpy expression representing the risk model.
         :rtype: cvxpy.expression
         """
-        self.expression = cp.sum_squares(cp.multiply(
-            self.idyosync_sqrt_parameter, w_plus_minus_w_bm[:-1]))
+        self.expression = cp.sum_squares(cp.multiply(self.idyosync_sqrt_parameter, w_plus_minus_w_bm[:-1]))
         assert self.expression.is_dcp(dpp=True)
 
-        self.expression += cp.sum_squares(self.factor_exposures_parameter @
-                                          w_plus_minus_w_bm[:-1])
+        self.expression += cp.sum_squares(self.factor_exposures_parameter @ w_plus_minus_w_bm[:-1])
         assert self.expression.is_dcp(dpp=True)
 
         return self.expression
@@ -440,11 +432,12 @@ class WorstCaseRisk(Cost):
         :returns: Cvxpy expression representing the risk model.
         :rtype: cvxpy.expression
         """
-        risks = [risk.compile_to_cvxpy(w_plus, z, w_plus_minus_w_bm)
-                 for risk in self.riskmodels]
+        risks = [risk.compile_to_cvxpy(w_plus, z, w_plus_minus_w_bm) for risk in self.riskmodels]
         return cp.max(cp.hstack(risks))
 
+
 # Aliases
+
 
 class FullSigma(FullCovariance):
     """Alias of :class:`FullCovariance`.
@@ -452,6 +445,7 @@ class FullSigma(FullCovariance):
     As it was defined originally in :paper:`section 6.1 <section.6.1>` of the
     paper.
     """
+
 
 class FactorModel(FactorModelCovariance):
     """Alias of :class:`FactorModelCovariance`.

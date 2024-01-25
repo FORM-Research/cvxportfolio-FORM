@@ -991,8 +991,8 @@ class MarketDataInMemory(MarketData):
         """Earliest date at which we can start a backtest."""
         return self.returns.iloc[:, :-1].dropna(how="all").index[self.min_history]
 
-    sampling_intervals = {"weekly": "W-MON", "monthly": "MS", "quarterly": "QS", "annual": "AS"}
-
+    sampling_intervals = {"weekly": "W", "monthly": "MS", "quarterly": "QS", "annual": "AS"}
+    # Create a custom week frequency that starts on the same weekday
     # @staticmethod
     # def _is_first_interval_small(datetimeindex):
     #     """Check if post-resampling the first interval is small.
@@ -1017,7 +1017,6 @@ class MarketDataInMemory(MarketData):
             .values
         )
 
-        # print(new_returns_index)
         self.returns = (
             np.exp(np.log(1 + self.returns).resample(interval, closed="left", label="left").sum(min_count=1)) - 1
         )

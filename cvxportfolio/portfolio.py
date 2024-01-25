@@ -63,3 +63,6 @@ class Portfolio(ABC):
             self.results.append(strategy.results)
 
         self.performance = pd.concat([res.full_v for res in self.results], axis=1)
+        self.performance.columns = [
+            strat.name if strat.name is not None else i for i, strat in enumerate(self.strategies)
+        ]

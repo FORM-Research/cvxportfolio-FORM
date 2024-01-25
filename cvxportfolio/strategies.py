@@ -56,9 +56,10 @@ class Strategy(ABC):
         The name of the cash column in the strategy's data. Default is 'cash'.
     """
 
-    def __init__(self, universe: Optional[List[str]] = None, cash_key: Optional[str] = "cash"):
+    def __init__(self, universe: Optional[List[str]] = None, cash_key: Optional[str] = "cash", name=None):
         self._universe = universe if universe is not None else []
         self._cash_key = cash_key
+        self.name = name
 
     def __repr__(self):
         return f"Strategy(universe={self.universe}, cash_key={self.cash_key})"
@@ -152,6 +153,7 @@ class MeanVarianceStrategy(Strategy):
         Sigma=HistoricalFactorizedCovariance,
         kelly=False,
         cash_key="USDOLLAR",
+        **kwargs,
     ):
         """
         Initialize a MeanVarianceStrategy instance.
@@ -171,7 +173,7 @@ class MeanVarianceStrategy(Strategy):
         cash_key : str, optional
             Name of the cash column in the strategy data.
         """
-        super().__init__(universe, cash_key=cash_key)
+        super().__init__(**kwargs)
         self.returns_forecast = ReturnsForecast(r_hat=r_hat, decay=decay)
         self.covariance_forecast = FullCovariance(Sigma=Sigma(kelly=kelly))
         self.gamma_risk = None
@@ -239,17 +241,23 @@ class MeanVarianceStrategy(Strategy):
         else:
             self.policy = policies.MultiPeriodOptimization
 
-    def set_risk_target(self, risk_target):
+    def set_risk_target(self, risk_target, Sigma=None):
         """Set the risk target for the portfolio."""
         self.risk_target = risk_target
         self.objective = self.returns_forecast
-        self.constraints += [FullSigmaLimit(risk_target, self.covariance_forecast.Sigma)]
+        if Sigma is not None:
+            self.constraints += [FullSigmaLimit(risk_target, Sigma=Sigma)]
+        else:
+            self.constraints += [FullSigmaLimit(risk_target, self.covariance_forecast.Sigma.data)]
 
-    def set_return_target(self, return_target):
+    def set_return_target(self, return_target, r_hat=None):
         """Set the return target for the portfolio."""
         self.return_target = return_target
         self.objective = -self.covariance_forecast
-        self.constraints += [ReturnsLimit(return_target, self.returns_forecast.r_hat)]
+        if r_hat is not None:
+            self.constraints += [ReturnsLimit(return_target, r_hat=r_hat)]
+        else:
+            self.constraints += [ReturnsLimit(return_target, self.returns_forecast.r_hat.data)]
 
     def add_transaction_penalty(self, gamma_trade, **kwargs):
         """Add a transaction penalty to the portfolio."""
@@ -258,26 +266,23 @@ class MeanVarianceStrategy(Strategy):
 
     def set_simulator_from_data(
         self,
-        returns,
+        returns=None,
         volumes=None,
         prices=None,
-        copy_dataframes=True,
-        trading_frequency=None,
-        min_history=pd.Timedelta("365.24d"),
-        base_location=BASE_LOCATION,
-        grace_period=pd.Timedelta("1d"),
         cash_key="USDOLLAR",
+        base_location=BASE_LOCATION,
+        min_history=pd.Timedelta("365.24d"),
+        trading_frequency=None,
+        **kwargs,
     ):
         self.simulator = MarketSimulator(
-            returns,
+            returns=returns,
             volumes=volumes,
             prices=prices,
-            copy_dataframes=copy_dataframes,
-            trading_frequency=trading_frequency,
-            min_history=min_history,
-            base_location=base_location,
-            grace_period=grace_period,
             cash_key=cash_key,
+            base_location=base_location,
+            min_history=min_history,
+            trading_frequency=trading_frequency,
         )
 
     def set_simulator_from_universe(self, universe, **kwargs):
