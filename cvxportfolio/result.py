@@ -922,7 +922,7 @@ class StrategyResult:
             )
         fig.update_yaxes(title_text=f"Largest {how_many_weights} weights")
         fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor="LightGrey")
-        fig.show()
+        return fig
 
         # # Leverage / Turnover
         # fig.add_trace(
@@ -953,17 +953,20 @@ class StrategyResult:
         """Get full portfolio weights."""
         full_w = pd.DataFrame(index=self.full_ret.index, columns=self.w.columns)
         full_w.loc[self.w_plus.index] = self.w_plus
-
         # Forward fill the weights
         full_w = full_w.fillna(method="ffill")
 
         # Adjust the weights for returns
-        idx_not_in_w = full_w.index.difference(self.w.index)
+        idx_not_in_w = full_w.index.difference(self.w_plus.index)
         for t in idx_not_in_w:
             i = full_w.index.get_loc(t) - 1
             full_w.loc[t] = (
                 full_w.iloc[i] * (1 + self.full_ret.loc[t]) / np.sum(full_w.iloc[i] * (1 + self.full_ret.loc[t]))
             )
+            try:
+                full_w["CUSTOM"] = full_w["CUSTOM"].fillna(method="ffill")
+            except:
+                pass
 
         self.full_w = full_w
 

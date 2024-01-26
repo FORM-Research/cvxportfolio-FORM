@@ -945,7 +945,12 @@ class MarketDataInMemory(MarketData):
     def _universe_mask_at_time(self, t):
         """Return the valid universe mask at time t."""
         past_returns = self.returns.loc[self.returns.index < t]
-        valid_universe_mask = (past_returns.count() >= self.min_history) & (~self.returns.loc[t].isnull())
+        a = self.returns["CUSTOM"].loc[t]
+        valid_universe_mask = (
+            (past_returns.count() >= self.min_history)
+            & (~self.returns.loc[t].isnull())
+            & (past_returns.iloc[-self.min_history :].count() > 0)
+        )
         if sum(valid_universe_mask) <= 1:
             raise DataError(
                 f"The trading universe at time {t} has size less or equal"
@@ -1017,9 +1022,13 @@ class MarketDataInMemory(MarketData):
             .values
         )
 
-        self.returns = (
-            np.exp(np.log(1 + self.returns).resample(interval, closed="left", label="left").sum(min_count=1)) - 1
-        )
+        try:
+            self.returns = (
+                np.exp(np.log(1 + self.returns).resample(interval, closed="left", label="left").sum(min_count=1)) - 1
+            )
+        except:
+            log_ret = (1 + self.returns).applymap(lambda x: np.log(x) if pd.notnull(x) else np.nan)
+            self.returns = np.exp(log_ret.resample(interval, closed="left", label="left").sum(min_count=1)) - 1
         self.returns.index = new_returns_index
 
         # last row is always unknown

@@ -835,9 +835,14 @@ class MultiPeriodOptimization(Policy):
             )
 
         if self.problem.status in ["infeasible", "infeasible_inaccurate"]:
-            raise PortfolioOptimizationError(
-                f"Policy {self.__class__.__name__} at time " + f"{t} resulted in an infeasible problem."
+            print(
+                PortfolioOptimizationError(
+                    f"Policy {self.__class__.__name__} at time " + f"{t} resulted in an infeasible problem."
+                )
             )
+            print("Defaulting to not trading.")
+            self._current_value = current_weights
+            return current_weights
 
         result = current_weights + pd.Series(self.z_at_lags[0].value, current_weights.index)
         self._current_value = result

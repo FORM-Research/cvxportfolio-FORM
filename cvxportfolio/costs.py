@@ -642,6 +642,15 @@ class TransactionCost(Cost):
             sigma_est = np.sqrt((past_returns.iloc[-windowsigma:, :-1] ** 2).mean()).values
             volume_est = past_volumes.iloc[-windowvolume:].mean().values + 1e-8
 
+            try:
+                temp = past_returns["CUSTOM"].iloc[-windowsigma:]
+            except:
+                pass
+            # TODO: implement custom assets tx costs
+            # drop nan values
+            sigma_est = sigma_est[~np.isnan(sigma_est)]
+            volume_est = volume_est[~np.isnan(volume_est)]
+
             self.second_term_multiplier.value = (
                 self.b.current_value
                 * sigma_est
