@@ -70,7 +70,7 @@ class CustomCovariance:
             return past_returns.iloc[-self.window :, :-1].cov()
 
 
-def generate_private_asset(reference_df, sparsity=0.2, initial_price=100, volume_range=(100, 1000)):
+def generate_private_asset(reference_df, sparsity="yearly", initial_price=100, volume_range=(100, 1000)):
     """
     Generate a custom private asset with sparse returns and volumes.
 
@@ -85,9 +85,6 @@ def generate_private_asset(reference_df, sparsity=0.2, initial_price=100, volume
     pd.DataFrame: DataFrame for volumes.
     """
     rng = np.random.default_rng(12345)
-
-    # Ensure sparsity is within the valid range
-    sparsity = max(0, min(sparsity, 1))
 
     # Dates from the reference DataFrame
     dates = reference_df.index
@@ -148,7 +145,7 @@ public_assets_returns = public_data.returns
 # fabricated custom asset data
 private_assets_prices, private_assets_volumes, private_assets_returns, private_assets_vars = generate_private_asset(
     public_assets_prices,
-    sparsity=0.2,
+    sparsity="quarterly",
 )
 
 # merge public and private assets
@@ -210,6 +207,8 @@ for i, res in enumerate(portfolio.results):
 
 fig.update_layout(title="Multi-Period Optimization", xaxis_title="Date", yaxis_title="Value")
 fig.show()
+
+portfolio.get_next_weights(data.prices.index[-1])
 
 
 # Print and plot the results

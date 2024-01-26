@@ -66,3 +66,27 @@ class Portfolio(ABC):
         self.performance.columns = [
             strat.name if strat.name is not None else i for i, strat in enumerate(self.strategies)
         ]
+
+    def get_next_weights(self, t: int) -> np.ndarray:
+        """Return the weights for the next period.
+
+        Parameters
+        ----------
+        t : int
+            The current period.
+
+        Returns
+        -------
+        np.ndarray
+            The weights for the next period.
+        """
+        for strategy in self.strategies:
+            current_weights = strategy.full_w.iloc[-1]
+            strategy.policy.values_in_time_recursive(
+                t=t,
+                current_weights=current_weights,
+                current_portfolio_value=current_portfolio_value,
+                past_returns=past_returns,
+                past_volumes=past_volumes,
+                current_prices=current_prices,
+            )
