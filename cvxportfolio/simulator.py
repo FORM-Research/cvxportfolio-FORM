@@ -233,7 +233,7 @@ class MarketSimulator:
         u = z * current_portfolio_value
 
         # zero out trades on stock that weren't trading on that day
-        if not current_volumes is None:
+        if current_volumes is not None:
             non_tradable_stocks = current_volumes[current_volumes <= 0].index
             if len(non_tradable_stocks):
                 logging.info(

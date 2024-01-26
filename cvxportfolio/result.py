@@ -903,15 +903,15 @@ class StrategyResult:
 
         fig.show()
 
-    def plot_weights(self, how_many_weights=None):
+    def plot_weights(self, how_many_assets=None):
         # Weights
-        if how_many_weights == None:
-            biggest_weights = self.w.columns
+        if how_many_assets == None:
+            biggest_weights = self.w_plus.columns
         else:
-            biggest_weights = np.abs(self.w).mean().sort_values().iloc[-how_many_weights:].index
-        fig = go.Figure()
+            biggest_weights = np.abs(self.w_plus).mean().sort_values().iloc[-how_many_assets:].index
+        list_scatter = []
         for weight in biggest_weights:
-            fig.add_trace(
+            list_scatter.append(
                 go.Scatter(
                     x=self.full_w.index,
                     y=self.full_w[weight],
@@ -920,38 +920,29 @@ class StrategyResult:
                     legendgroup=weight,
                 )
             )
-        fig.update_yaxes(title_text=f"Largest {how_many_weights} weights")
-        fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor="LightGrey")
-        return fig
+        return list_scatter
 
-        # # Leverage / Turnover
-        # fig.add_trace(
-        #     go.Scatter(
-        #         x=self.leverage.index,
-        #         y=self.leverage,
-        #         name="Leverage",
-        #         mode="lines",
-        #         line=dict(dash="dash", color="black"),
-        #     ),
-        #     row=3,
-        #     col=1,
-        # )
-        # fig.add_trace(
-        #     go.Scatter(x=self.turnover.index, y=self.turnover, name="Turnover", mode="lines", line=dict(color="red")),
-        #     row=3,
-        #     col=1,
-        # )
-        # fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor="LightGrey", row=3, col=1)
-
-        # # Update layout
-        # fig.update_layout(height=1056, width=816, title_text="Back-test result", showlegend=True)
-
-        # # Show plot
-        # fig.show()
+    def plot_trades(self, how_many_assets=None):
+        list_scatter = []
+        if how_many_assets == None:
+            biggest_weights = self.u.columns
+        else:
+            biggest_weights = np.abs(self.u).mean().sort_values().iloc[-how_many_assets:].index
+        for weight in biggest_weights:
+            list_scatter.append(
+                go.Scatter(
+                    x=self.u.index,
+                    y=self.u[weight],
+                    name=weight,
+                    mode="lines",
+                    legendgroup=weight,
+                )
+            )
+        return list_scatter
 
     def _set_full_w(self):
         """Get full portfolio weights."""
-        full_w = pd.DataFrame(index=self.full_ret.index, columns=self.w.columns)
+        full_w = pd.DataFrame(index=self.full_ret.index, columns=self.w_plus.columns)
         full_w.loc[self.w_plus.index] = self.w_plus
         # Forward fill the weights
         full_w = full_w.fillna(method="ffill")
@@ -963,10 +954,10 @@ class StrategyResult:
             full_w.loc[t] = (
                 full_w.iloc[i] * (1 + self.full_ret.loc[t]) / np.sum(full_w.iloc[i] * (1 + self.full_ret.loc[t]))
             )
-            try:
-                full_w["CUSTOM"] = full_w["CUSTOM"].fillna(method="ffill")
-            except:
-                pass
+        try:
+            full_w["CUSTOM"] = full_w["CUSTOM"].fillna(method="ffill")
+        except:
+            pass
 
         self.full_w = full_w
 

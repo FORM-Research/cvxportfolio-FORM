@@ -100,3 +100,5 @@ ENV/
 
 # pytest cache
 .pytest_cache
+
+examples/*.ipynb

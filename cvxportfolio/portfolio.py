@@ -64,7 +64,8 @@ class Portfolio(ABC):
 
         self.performance = pd.concat([res.full_v for res in self.results], axis=1)
         self.performance.columns = [
-            strat.name if strat.name is not None else i for i, strat in enumerate(self.strategies)
+            strat.name if strat.name is not None else f"{strat.__class__.__name__}_{i}"
+            for i, strat in enumerate(self.strategies)
         ]
 
     def get_next_weights(self, t: int) -> np.ndarray:

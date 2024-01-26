@@ -945,7 +945,6 @@ class MarketDataInMemory(MarketData):
     def _universe_mask_at_time(self, t):
         """Return the valid universe mask at time t."""
         past_returns = self.returns.loc[self.returns.index < t]
-        a = self.returns["CUSTOM"].loc[t]
         valid_universe_mask = (
             (past_returns.count() >= self.min_history)
             & (~self.returns.loc[t].isnull())
